@@ -7,6 +7,7 @@
 - Added public SDK exports for CLI-equivalent model and scoped-model resolution ([#6201](https://github.com/earendil-works/pi/issues/6201)).
 - Added extension entry renderers for persisted display-only session entries that are rendered in interactive mode without being sent to the model context.
 - Added an optional `toolPath` theme token that controls the color of file paths in built-in file tool titles (read/edit/write/grep/find/ls). Falls back to `accent` when a theme omits it, so existing themes render unchanged. See [Color Tokens](docs/themes.md#color-tokens).
+- Markdown inline code that resolves to an existing file path now renders with the `toolPath` color and an OSC 8 `file://` hyperlink, matching clickable tool paths. Relative paths resolve against the session cwd. Non-path inline code (shell commands, function calls, identifiers) and non-existent paths keep the `mdCode` color.
 
 ### Fixed
 
