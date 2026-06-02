@@ -1035,6 +1035,7 @@ export class InteractiveMode {
 		return {
 			...getMarkdownTheme(),
 			codeBlockIndent: this.settingsManager.getCodeBlockIndent(),
+			codeBlockBorderStyle: this.settingsManager.getCodeBlockBorderStyle(),
 		};
 	}
 
