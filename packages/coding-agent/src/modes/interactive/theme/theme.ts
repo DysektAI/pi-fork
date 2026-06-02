@@ -88,6 +88,7 @@ const ThemeJsonSchema = Type.Object({
 		thinkingMedium: ColorValueSchema,
 		thinkingHigh: ColorValueSchema,
 		thinkingXhigh: ColorValueSchema,
+		thinkingMax: Type.Optional(ColorValueSchema),
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
 	}),
@@ -149,6 +150,7 @@ export type ThemeColor =
 	| "thinkingMedium"
 	| "thinkingHigh"
 	| "thinkingXhigh"
+	| "thinkingMax"
 	| "bashMode";
 
 export type ThemeBg =
@@ -396,7 +398,9 @@ export class Theme {
 		return this.mode;
 	}
 
-	getThinkingBorderColor(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): (str: string) => string {
+	getThinkingBorderColor(
+		level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max",
+	): (str: string) => string {
 		// Map thinking levels to dedicated theme colors
 		switch (level) {
 			case "off":
@@ -411,6 +415,8 @@ export class Theme {
 				return (str: string) => this.fg("thinkingHigh", str);
 			case "xhigh":
 				return (str: string) => this.fg("thinkingXhigh", str);
+			case "max":
+				return (str: string) => this.fg("thinkingMax", str);
 			default:
 				return (str: string) => this.fg("thinkingOff", str);
 		}
@@ -603,6 +609,11 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		} else {
 			fgColors[key as ThemeColor] = value;
 		}
+	}
+	// thinkingMax is optional; fall back to thinkingXhigh so themes predating the
+	// "max" level still resolve a color for it.
+	if (fgColors.thinkingMax === undefined) {
+		fgColors.thinkingMax = fgColors.thinkingXhigh;
 	}
 	return new Theme(fgColors, bgColors, colorMode, {
 		name: themeJson.name,
