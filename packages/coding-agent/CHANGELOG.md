@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added an optional `toolPath` theme token that controls the color of file paths in built-in file tool titles (read/edit/write/grep/find/ls). Falls back to `accent` when a theme omits it, so existing themes render unchanged. See [Color Tokens](docs/themes.md#color-tokens).
+
 ## [0.79.9] - 2026-06-20
 
 ### New Features
