@@ -140,13 +140,13 @@ vim ~/.pi/agent/themes/my-theme.json
 
 - `name` is required, must be unique, and must not contain `/`.
 - `vars` is optional. Define reusable colors here, then reference them in `colors`.
-- `colors` must define all 51 required tokens. `thinkingMax` is optional and falls back to `thinkingXhigh`.
+- `colors` must define all 51 required tokens. `thinkingMax` and `toolPath` are optional.
 
 The `$schema` field enables editor auto-completion and validation.
 
 ## Color Tokens
 
-Every theme must define all 51 required color tokens. `thinkingMax` is optional for compatibility with existing themes; when omitted, it uses `thinkingXhigh`.
+Every theme must define all 51 required color tokens. `thinkingMax` falls back to `thinkingXhigh`; `toolPath` falls back to `accent`.
 
 ### Core UI (11 colors)
 
@@ -236,6 +236,12 @@ Editor border colors indicating thinking level (visual hierarchy from subtle to 
 | Token | Purpose |
 |-------|---------|
 | `bashMode` | Editor border in bash mode (`!` prefix) |
+
+### Tool Path (optional)
+
+| Token | Purpose |
+|-------|---------|
+| `toolPath` | File path color in tool call headers (read/edit/write/grep/find/ls). Optional; falls back to `accent` when omitted. |
 
 ### HTML Export (optional)
 

@@ -296,6 +296,10 @@
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Editor border color in bash mode"
+				},
+				"toolPath": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Tool execution box file path color (optional; falls back to accent when omitted)"
 				}
 			},
 			"additionalProperties": false
