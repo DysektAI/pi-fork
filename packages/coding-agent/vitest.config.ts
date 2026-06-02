@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { boundedForkPool } from "../../scripts/vitest-pool.mjs";
 
 const aiSrcIndex = fileURLToPath(new URL("../ai/src/index.ts", import.meta.url));
 const aiSrcBase = fileURLToPath(new URL("../ai/src/base.ts", import.meta.url));
@@ -14,6 +15,7 @@ export default defineConfig({
 		globals: true,
 		environment: "node",
 		testTimeout: 30000,
+		...boundedForkPool(),
 		server: {
 			deps: {
 				external: [/@silvia-odwyer\/photon-node/],

@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { boundedForkPool } from "../../scripts/vitest-pool.mjs";
 
 export default defineConfig({
 	resolve: {
@@ -11,5 +12,6 @@ export default defineConfig({
 		globals: true,
 		environment: "node",
 		testTimeout: 30000, // 30 seconds for API calls
+		...boundedForkPool(),
 	},
 });
