@@ -13,6 +13,7 @@
 - Added cache-friendly dynamic tool loading for extension tools activated by tool results. Supported Anthropic and OpenAI Responses models load definitions where they become available, preserving the cached prompt prefix. See [Dynamic Tool Loading](docs/extensions.md#dynamic-tool-loading) ([#6474](https://github.com/earendil-works/pi-mono/pull/6474)).
 - Added inherited native `xhigh` and `max` thinking levels for Claude Fable 5 across all generated provider catalogs ([#6490](https://github.com/earendil-works/pi-mono/pull/6490) by [@davidbrai](https://github.com/davidbrai)).
 - Added `Ctrl+X` to copy the last assistant message, or the selected message in `/tree`.
+- Added an optional `toolPath` theme token that controls the color of file paths in built-in file tool titles (read/edit/write/grep/find/ls). Falls back to `accent` when a theme omits it, so existing themes render unchanged. See [Color Tokens](docs/themes.md#color-tokens).
 
 ### Fixed
 
