@@ -1,9 +1,10 @@
+import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../src/core/footer-data-provider.ts";
 import { FooterComponent, formatCwdForFooter } from "../src/modes/interactive/components/footer.ts";
-import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 type AssistantUsage = {
@@ -140,5 +141,61 @@ describe("FooterComponent width handling", () => {
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
 		expect(statsLine).toContain("CH25.0%");
+	});
+});
+
+describe("FooterComponent thinking level color", () => {
+	beforeAll(() => {
+		initTheme(undefined, false);
+	});
+
+	const statsLine = (session: AgentSession, width = 120): string => {
+		const lines = new FooterComponent(session, createFooterData(1)).render(width);
+		return lines[lines.length - 1];
+	};
+
+	it("colors the thinking-level token with its thinking-level color", () => {
+		const session = createSession({
+			sessionName: "",
+			modelId: "test-model",
+			reasoning: true,
+			thinkingLevel: "max",
+		});
+
+		const line = statsLine(session);
+		const maxColored = theme.getThinkingBorderColor("max")("max");
+		const xhighColored = theme.getThinkingBorderColor("xhigh")("max");
+
+		expect(line).toContain(maxColored);
+		expect(stripVTControlCharacters(line)).toContain("\u2022 max");
+		expect(line).not.toContain(xhighColored);
+	});
+
+	it("does not color the level when the model lacks reasoning", () => {
+		const session = createSession({
+			sessionName: "",
+			modelId: "test-model",
+			reasoning: false,
+			thinkingLevel: "max",
+		});
+
+		const line = statsLine(session);
+		expect(stripVTControlCharacters(line)).not.toContain("\u2022 max");
+		expect(line).not.toContain(theme.getThinkingBorderColor("max")("max"));
+	});
+
+	it("keeps the colored level within width when truncated", () => {
+		const width = 40;
+		const session = createSession({
+			sessionName: "",
+			modelId: "m".repeat(50),
+			reasoning: true,
+			thinkingLevel: "max",
+		});
+
+		const lines = new FooterComponent(session, createFooterData(1)).render(width);
+		for (const line of lines) {
+			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+		}
 	});
 });
