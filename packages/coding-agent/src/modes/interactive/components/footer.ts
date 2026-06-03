@@ -180,12 +180,17 @@ export class FooterComponent implements Component {
 		// Calculate available space for padding (minimum 2 spaces between stats and model)
 		const minPadding = 2;
 
-		// Add thinking level indicator if model supports reasoning
+		// Add thinking level indicator if model supports reasoning. The level token
+		// is colored with its thinking-level color (matching the editor border) so a
+		// glance at the footer reflects the active level; the rest stays dim.
 		let rightSideWithoutProvider = modelName;
+		let thinkingToken: string | undefined;
+		let coloredThinkingToken: string | undefined;
 		if (state.model?.reasoning) {
 			const thinkingLevel = state.thinkingLevel || "off";
-			rightSideWithoutProvider =
-				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+			thinkingToken = thinkingLevel === "off" ? "thinking off" : thinkingLevel;
+			coloredThinkingToken = theme.getThinkingBorderColor(thinkingLevel)(thinkingToken);
+			rightSideWithoutProvider = `${modelName} • ${thinkingToken}`;
 		}
 
 		// Prepend the provider in parentheses if there are multiple providers and there's enough room
@@ -225,7 +230,16 @@ export class FooterComponent implements Component {
 		// before and after the colored section independently.
 		const dimStatsLeft = theme.fg("dim", statsLeft);
 		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
-		const dimRemainder = theme.fg("dim", remainder);
+		// Color the thinking-level token if it survived truncation; otherwise dim the
+		// whole remainder. The token is matched at the end so model ids containing the
+		// same text are not affected.
+		let dimRemainder: string;
+		if (thinkingToken && coloredThinkingToken && remainder.endsWith(thinkingToken)) {
+			const prefix = remainder.slice(0, remainder.length - thinkingToken.length);
+			dimRemainder = theme.fg("dim", prefix) + coloredThinkingToken;
+		} else {
+			dimRemainder = theme.fg("dim", remainder);
+		}
 
 		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
 		const lines = [pwdLine, dimStatsLeft + dimRemainder];
