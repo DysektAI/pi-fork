@@ -193,47 +193,85 @@ for b in "${INDEPENDENT_BRANCHES[@]}"; do
 	push_lease "$b"
 done
 
+# A dependent branch only needs rebuilding when one of its bases actually moved
+# since the pre-sync snapshot. base_moved <branch...> returns 0 (true) if any
+# listed base differs from its backup tag, 1 (false) if all bases are unchanged.
+base_moved() {
+	local base tag
+	for base in "$@"; do
+		tag="${BACKUP_PREFIX}/$(echo "$base" | tr '/' '-')"
+		if ! git rev-parse --verify -q "$tag" >/dev/null; then
+			return 0  # no snapshot: rebuild to be safe
+		fi
+		if [[ "$(git rev-parse "$base")" != "$(git rev-parse "$tag")" ]]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
 rebuild_dependent_branches() {
-	# markdown-path-linkify: replay its 3 commits onto the new toolpath tip.
-	say "Rebuilding feat/markdown-path-linkify on feat/theme-toolpath-color"
-	local old_toolpath
-	old_toolpath="$(git rev-parse "${BACKUP_PREFIX}/feat-theme-toolpath-color")"
-	git switch feat/markdown-path-linkify -q
-	if ! git rebase --onto feat/theme-toolpath-color "$old_toolpath" feat/markdown-path-linkify; then
-		git rebase --abort || true
-		die "Rebase conflict in feat/markdown-path-linkify. Resolve manually."
+	# markdown-path-linkify: replay its commits onto the new toolpath tip.
+	if base_moved feat/theme-toolpath-color; then
+		say "Rebuilding feat/markdown-path-linkify on feat/theme-toolpath-color"
+		local old_toolpath
+		old_toolpath="$(git rev-parse "${BACKUP_PREFIX}/feat-theme-toolpath-color")"
+		git switch feat/markdown-path-linkify -q
+		if ! git rebase --onto feat/theme-toolpath-color "$old_toolpath" feat/markdown-path-linkify; then
+			git rebase --abort || true
+			die "Rebase conflict in feat/markdown-path-linkify. Resolve manually."
+		fi
+		push_lease feat/markdown-path-linkify
+	else
+		say "feat/markdown-path-linkify base unchanged; skipping rebuild"
+		push_lease feat/markdown-path-linkify
 	fi
-	push_lease feat/markdown-path-linkify
 
 	# footer-thinking-level-color: single commit on top of max-thinking.
-	say "Rebuilding feat/footer-thinking-level-color on feat/max-thinking-level"
-	local footer_commit
-	footer_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-footer-thinking-level-color")"
-	git switch -C feat/footer-thinking-level-color feat/max-thinking-level -q
-	if ! git cherry-pick "$footer_commit"; then
-		git cherry-pick --abort || true
-		die "Cherry-pick conflict in feat/footer-thinking-level-color. Resolve manually."
+	if base_moved feat/max-thinking-level; then
+		say "Rebuilding feat/footer-thinking-level-color on feat/max-thinking-level"
+		local footer_commit
+		footer_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-footer-thinking-level-color")"
+		git switch -C feat/footer-thinking-level-color feat/max-thinking-level -q
+		if ! git cherry-pick "$footer_commit"; then
+			git cherry-pick --abort || true
+			die "Cherry-pick conflict in feat/footer-thinking-level-color. Resolve manually."
+		fi
+		push_lease feat/footer-thinking-level-color
+	else
+		say "feat/footer-thinking-level-color base unchanged; skipping rebuild"
+		push_lease feat/footer-thinking-level-color
 	fi
-	push_lease feat/footer-thinking-level-color
 
 	# theme-missing-token-warning: needs both token features, then 1 commit.
-	say "Rebuilding feat/theme-missing-token-warning on max-thinking + toolpath"
-	local warn_commit
-	warn_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-theme-missing-token-warning")"
-	git switch -C feat/theme-missing-token-warning feat/max-thinking-level -q
-	if ! git merge --no-ff feat/theme-toolpath-color \
-		-m "merge: combine max-thinking and toolpath as the optional-token base"; then
-		warn "theme.ts token-union conflict expected; resolving automatically."
-		resolve_theme_token_union || die "Could not auto-resolve theme.ts; resolve manually."
-		# Complete the merge commit (rerere/our resolver has staged the result).
-		git commit --no-verify -q --no-edit || \
-			die "Merge resolution staged but commit failed; resolve manually."
+	if base_moved feat/max-thinking-level feat/theme-toolpath-color; then
+		say "Rebuilding feat/theme-missing-token-warning on max-thinking + toolpath"
+		local warn_commit
+		warn_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-theme-missing-token-warning")"
+		git switch -C feat/theme-missing-token-warning feat/max-thinking-level -q
+		if ! git merge --no-ff feat/theme-toolpath-color \
+			-m "merge: combine max-thinking and toolpath as the optional-token base"; then
+			warn "theme.ts token-union conflict expected; resolving automatically."
+			resolve_theme_token_union || die "Could not auto-resolve theme.ts; resolve manually."
+			# Complete the merge commit (rerere/our resolver has staged the result).
+			git commit --no-verify -q --no-edit || \
+				die "Merge resolution staged but commit failed; resolve manually."
+		fi
+		if ! git cherry-pick "$warn_commit"; then
+			# The warn commit can re-touch theme.ts; let rerere/our resolver handle it.
+			if resolve_theme_token_union; then
+				git cherry-pick --continue --no-edit || \
+					die "Cherry-pick resolution staged but continue failed; resolve manually."
+			else
+				git cherry-pick --abort || true
+				die "Cherry-pick conflict in feat/theme-missing-token-warning. Resolve manually."
+			fi
+		fi
+		push_lease feat/theme-missing-token-warning
+	else
+		say "feat/theme-missing-token-warning base unchanged; skipping rebuild"
+		push_lease feat/theme-missing-token-warning
 	fi
-	if ! git cherry-pick "$warn_commit"; then
-		git cherry-pick --abort || true
-		die "Cherry-pick conflict in feat/theme-missing-token-warning. Resolve manually."
-	fi
-	push_lease feat/theme-missing-token-warning
 }
 
 # Auto-resolve the recurring ThemeColor union conflict (toolPath + thinkingMax).
