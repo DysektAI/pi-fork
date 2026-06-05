@@ -87,7 +87,9 @@ export function writeRawStdout(text: string): void {
 		return;
 	}
 	rawStdoutWriteTail = rawStdoutWriteTail.then(() => writeRawStdoutChunk(text));
-	void rawStdoutWriteTail.catch(() => {
+	void rawStdoutWriteTail.catch((err) => {
+		const message = err instanceof Error ? err.message : String(err);
+		process.stderr.write(`Fatal: stdout write failed: ${message}\n`);
 		process.exit(1);
 	});
 }
