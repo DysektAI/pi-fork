@@ -47,20 +47,20 @@ export function resolveMaxForks() {
 }
 
 /**
- * Build the `test.pool` / `test.poolOptions` slice of a Vitest config that
- * bounds fork concurrency. Spread the result into a Vitest `test` block.
+ * Build the bounded-concurrency slice of a Vitest config. Spread the result
+ * into a Vitest `test` block.
  *
- * @returns {{ pool: "forks", poolOptions: { forks: { maxForks: number, minForks: number } } }}
+ * Vitest 4 removed `poolOptions.forks.{maxForks,minForks}` in favor of the
+ * top-level `maxWorkers`/`minWorkers` options (see the v4 "Pool Rework"
+ * migration). We keep `pool: "forks"` and cap workers via `maxWorkers`.
+ *
+ * @returns {{ pool: "forks", maxWorkers: number, minWorkers: number }}
  */
 export function boundedForkPool() {
 	const maxForks = resolveMaxForks();
 	return {
 		pool: "forks",
-		poolOptions: {
-			forks: {
-				maxForks,
-				minForks: 1,
-			},
-		},
+		maxWorkers: maxForks,
+		minWorkers: 1,
 	};
 }
