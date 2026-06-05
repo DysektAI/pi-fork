@@ -29,11 +29,17 @@ Stacked features:
 
 This is idempotent and only touches local git state:
 
+- Copies `.fork/changelog-merge.py` into `.git/fork/` so the driver is reachable
+  no matter which branch is checked out (the tracked `.fork/` copy only lives on
+  `feat/fork-tooling`, which is absent during feature rebases).
 - Registers the `fork-changelog` merge driver in `.git/config`.
 - Maps `**/CHANGELOG.md` to that driver in `.git/info/attributes` (untracked,
   so nothing fork-specific lands in the upstream-owned `.gitattributes`).
 - Enables `rerere` with autoupdate, so any conflict you resolve by hand is
   replayed automatically the next time it recurs.
+
+`fork-sync.sh` runs this automatically at the start of every sync, so the driver
+is always installed before the first feature rebase.
 
 ## Syncing with upstream
 
