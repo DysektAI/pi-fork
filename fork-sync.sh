@@ -203,7 +203,9 @@ rebuild_dependent_branches() {
 		-m "merge: combine max-thinking and toolpath as the optional-token base"; then
 		warn "theme.ts token-union conflict expected; resolving automatically."
 		resolve_theme_token_union || die "Could not auto-resolve theme.ts; resolve manually."
-		git commit --no-verify -q --no-edit
+		# Complete the merge commit (rerere/our resolver has staged the result).
+		git commit --no-verify -q --no-edit || \
+			die "Merge resolution staged but commit failed; resolve manually."
 	fi
 	if ! git cherry-pick "$warn_commit"; then
 		git cherry-pick --abort || true
@@ -213,9 +215,23 @@ rebuild_dependent_branches() {
 }
 
 # Auto-resolve the recurring ThemeColor union conflict (toolPath + thinkingMax).
+# Returns 0 if the conflict is resolved (either by us or already by rerere),
+# 1 if it could not be resolved automatically.
 resolve_theme_token_union() {
 	local f="packages/coding-agent/src/modes/interactive/theme/theme.ts"
-	git ls-files -u | awk '{print $4}' | sort -u | grep -qx "$f" || return 1
+	# If rerere already resolved everything, there are no unmerged files left.
+	if [[ -z "$(git ls-files -u)" ]]; then
+		# Make sure no conflict markers slipped through anywhere (skip this script,
+		# which legitimately contains marker-like strings in its heredoc).
+		if git grep -lE '^(<<<<<<<|>>>>>>>)' -- ':!fork-sync.sh' >/dev/null 2>&1; then
+			return 1
+		fi
+		return 0
+	fi
+	# Only theme.ts should be in conflict; bail if anything else is unmerged.
+	local unmerged
+	unmerged="$(git ls-files -u | awk '{print $4}' | sort -u)"
+	[[ "$unmerged" == "$f" ]] || return 1
 	python3 - "$f" <<'PY'
 import sys
 p = sys.argv[1]
@@ -247,7 +263,8 @@ for b in "${LOCAL_MERGE_BRANCHES[@]}"; do
 	echo "--- merging $b ---"
 	if ! git merge --no-ff "$b" -m "merge: integrate $b into local"; then
 		if resolve_theme_token_union; then
-			git commit --no-verify -q --no-edit
+			git commit --no-verify -q --no-edit || \
+				die "Merge resolution staged but commit failed integrating $b."
 		else
 			die "Merge conflict integrating $b into local. Resolve manually."
 		fi
