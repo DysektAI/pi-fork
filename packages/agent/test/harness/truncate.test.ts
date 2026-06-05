@@ -113,6 +113,15 @@ describe("truncate utilities", () => {
 		expect(result.truncatedBy).toBe("bytes");
 	});
 
+	it("keeps byte classification for an oversized single line when maxLines is 1", () => {
+		const result = truncateTail("X".repeat(4096), { maxBytes: 1024, maxLines: 1 });
+
+		expect(result.content).toBe("X".repeat(1024));
+		expect(result.outputLines).toBe(1);
+		expect(result.lastLinePartial).toBe(true);
+		expect(result.truncatedBy).toBe("bytes");
+	});
+
 	it("drops an oversized trailing character when it cannot fit in tail byte limit", () => {
 		const result = truncateTail("abc🙂", { maxBytes: 3, maxLines: 10 });
 
