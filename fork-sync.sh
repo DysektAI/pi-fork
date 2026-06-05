@@ -108,7 +108,29 @@ push_lease() {
 
 # ---- Workflow --------------------------------------------------------------
 
-cd "$(dirname "$0")"
+REPO_ROOT="$(cd "$(dirname "$0")" && git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Self-update guard: the canonical fork-sync.sh + .fork tooling live on
+# feat/fork-tooling. Whichever branch you launch from, re-exec the canonical
+# version so a fix on feat/fork-tooling takes effect immediately (avoids the
+# bootstrap problem where `local` still carries an older script). The re-exec
+# stays anchored to the repo via FORK_SYNC_ROOT.
+if [[ "${FORK_SYNC_REEXEC:-0}" -ne 1 ]] && git rev-parse --verify -q feat/fork-tooling >/dev/null; then
+	canonical="$(git show feat/fork-tooling:fork-sync.sh 2>/dev/null || true)"
+	if [[ -n "$canonical" && "$canonical" != "$(cat "$REPO_ROOT/fork-sync.sh" 2>/dev/null)" ]]; then
+		warn "Running canonical fork-sync.sh from feat/fork-tooling (self-update)."
+		tmp="$(mktemp)"
+		printf '%s' "$canonical" > "$tmp"
+		chmod +x "$tmp"
+		FORK_SYNC_REEXEC=1 FORK_SYNC_ROOT="$REPO_ROOT" exec bash "$tmp" "$@"
+	fi
+fi
+# When re-exec'd from a temp path, anchor back to the real repo root.
+if [[ -n "${FORK_SYNC_ROOT:-}" ]]; then
+	cd "$FORK_SYNC_ROOT"
+fi
+
 require_clean_tree
 
 say "Ensuring fork git config is installed (merge driver + rerere)"
