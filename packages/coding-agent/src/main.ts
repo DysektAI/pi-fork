@@ -774,8 +774,12 @@ export async function main(args: string[], options?: MainOptions) {
 		stdinContent,
 	);
 	time("prepareInitialMessage");
-	initTheme(settingsManager.getTheme(), appMode === "interactive");
+	const themeInit = initTheme(settingsManager.getTheme(), appMode === "interactive");
 	time("initTheme");
+
+	if (themeInit.fallback && appMode === "interactive") {
+		console.warn(chalk.yellow(themeInit.fallback));
+	}
 
 	// Show deprecation warnings in interactive mode
 	if (appMode === "interactive" && deprecationWarnings.length > 0) {
