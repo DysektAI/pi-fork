@@ -1,0 +1,162 @@
+{
+  "$schema": "./fork-manifest.schema.json",
+  "description": "Single source of truth for fork features. fork-sync.sh builds 'local' from these; fork-drift-check.sh evaluates each 'drift' probe against upstream/main to flag features upstream may have absorbed.",
+  "identity": {
+    "name": "DysektAI",
+    "email": "33468668+DysektAI@users.noreply.github.com"
+  },
+  "upstreamRef": "upstream/main",
+  "integrationBranch": "local",
+  "features": [
+    {
+      "branch": "feat/fork-tooling",
+      "summary": "Fork maintenance tooling: CHANGELOG merge driver, rerere setup, sync scripts, docs.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": ".fork/changelog-merge.py",
+        "note": "Tooling is inherently fork-only; upstream will never carry it. Probe stays ACTIVE."
+      }
+    },
+    {
+      "branch": "feat/theme-toolpath-color",
+      "summary": "Optional toolPath theme token for file paths in tool titles.",
+      "base": "main",
+      "mergeIntoLocal": false,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/modes/interactive/theme/theme.ts",
+        "pattern": "toolPath"
+      }
+    },
+    {
+      "branch": "feat/max-thinking-level",
+      "summary": "Adds 'max' thinking level across providers and UI.",
+      "base": "main",
+      "mergeIntoLocal": false,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/types.ts",
+        "pattern": "\"xhigh\" | \"max\""
+      }
+    },
+    {
+      "branch": "feat/markdown-codeblock-border-style",
+      "summary": "Configurable code block border styles in the TUI markdown renderer.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/settings-manager.ts",
+        "pattern": "odeBlockBorderStyle"
+      }
+    },
+    {
+      "branch": "feat/test-bounded-pool",
+      "summary": "Bounds vitest worker concurrency to prevent host overload.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-present",
+        "ref": "upstream/main",
+        "path": "scripts/vitest-pool.mjs",
+        "note": "REDUNDANT if upstream ships its own worker-cap script at this path."
+      }
+    },
+    {
+      "branch": "feat/markdown-path-linkify",
+      "summary": "Linkify existing file paths in markdown inline code; label bash tool calls.",
+      "base": "feat/theme-toolpath-color",
+      "stackedOn": "feat/theme-toolpath-color",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/tools/bash.ts",
+        "pattern": "bash \\$"
+      }
+    },
+    {
+      "branch": "feat/footer-thinking-level-color",
+      "summary": "Color the footer thinking-level indicator per level.",
+      "base": "feat/max-thinking-level",
+      "stackedOn": "feat/max-thinking-level",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/modes/interactive/components/footer.ts",
+        "pattern": "thinkingLevelColor"
+      }
+    },
+    {
+      "branch": "feat/theme-missing-token-warning",
+      "summary": "Warn when a custom theme omits optional color tokens.",
+      "base": "feat/max-thinking-level",
+      "stackedOn": ["feat/max-thinking-level", "feat/theme-toolpath-color"],
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/main.ts",
+        "pattern": "missingTokens|warnMissing"
+      }
+    },
+    {
+      "branch": "deps/upgrade-vitest-4",
+      "summary": "Upgrade vitest 3.2.4 -> 4.1.8 (GHSA-5xrq-8626-4rwp).",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "version-gte",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/package.json",
+        "jsonPath": "devDependencies.vitest",
+        "minVersion": "4.1.0",
+        "note": "REDUNDANT once upstream's vitest devDependency is >= 4.1.0."
+      }
+    },
+    {
+      "branch": "fix/improve-error-handling",
+      "summary": "Surface errors via stderr (avoid TUI corruption), add stack traces, preserve OAuth error cause.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/event-bus.ts",
+        "pattern": "onError"
+      }
+    },
+    {
+      "branch": "test/add-unit-tests-coverage",
+      "summary": "Unit tests for previously untested pure-logic modules across all packages.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-present",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/test/changelog.test.ts",
+        "note": "Heuristic: REDUNDANT if upstream adds equivalent coverage for these modules."
+      }
+    },
+    {
+      "branch": "refactor/deduplicate-shared-utils",
+      "summary": "Deduplicate truncate/messages/compaction utils between agent and coding-agent.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-present",
+        "ref": "upstream/main",
+        "file": "packages/agent/src/index.ts",
+        "pattern": "FileOperations",
+        "note": "REDUNDANT if upstream exports the shared utilities itself."
+      }
+    }
+  ]
+}
