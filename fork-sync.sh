@@ -280,16 +280,16 @@ rebuild_dependent_branches() {
 	fi
 }
 
-# Auto-resolve the recurring ThemeColor union conflict (toolPath + thinkingMax).
-# Returns 0 if the conflict is resolved (either by us or already by rerere),
-# 1 if it could not be resolved automatically.
+# Auto-resolve the recurring ThemeColor union conflicts in theme.ts (multiple
+# fork features add members to the same string-literal unions). Delegates to
+# .fork/resolve-theme-union.py, which unions all conflicting members and handles
+# nested markers. Returns 0 if no conflict markers remain (resolved, possibly by
+# rerere), 1 if anything could not be auto-resolved.
 resolve_theme_token_union() {
 	local f="packages/coding-agent/src/modes/interactive/theme/theme.ts"
 	# If rerere already resolved everything, there are no unmerged files left.
 	if [[ -z "$(git ls-files -u)" ]]; then
-		# Make sure no conflict markers slipped through anywhere (skip this script,
-		# which legitimately contains marker-like strings in its heredoc).
-		if git grep -lE '^(<<<<<<<|>>>>>>>)' -- ':!fork-sync.sh' >/dev/null 2>&1; then
+		if git grep -lE '^(<<<<<<<|>>>>>>>)' -- ':!fork-sync.sh' ':!.fork' >/dev/null 2>&1; then
 			return 1
 		fi
 		return 0
@@ -298,26 +298,11 @@ resolve_theme_token_union() {
 	local unmerged
 	unmerged="$(git ls-files -u | awk '{print $4}' | sort -u)"
 	[[ "$unmerged" == "$f" ]] || return 1
-	python3 - "$f" <<'PY'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-conflict = '''\t| "thinkingXhigh"
-<<<<<<< HEAD
-\t| "thinkingMax"
-\t| "bashMode";
-=======
-\t| "bashMode"
-\t| "toolPath";
->>>>>>> feat/theme-toolpath-color'''
-resolved = '''\t| "thinkingXhigh"
-\t| "thinkingMax"
-\t| "bashMode"
-\t| "toolPath";'''
-if conflict not in s:
-    sys.exit(1)
-open(p, "w").write(s.replace(conflict, resolved))
-PY
+	if [[ ! -f .fork/resolve-theme-union.py ]]; then
+		warn ".fork/resolve-theme-union.py missing; cannot auto-resolve theme.ts."
+		return 1
+	fi
+	python3 .fork/resolve-theme-union.py "$f" || return 1
 	git add "$f"
 }
 
@@ -333,6 +318,17 @@ for b in "${LOCAL_MERGE_BRANCHES[@]}"; do
 				die "Merge resolution staged but commit failed integrating $b."
 		else
 			die "Merge conflict integrating $b into local. Resolve manually."
+		fi
+	fi
+	# Guard against rerere autoupdate committing a bad (marker-laden) resolution.
+	if git grep -lE '^(<<<<<<<|>>>>>>>)' -- ':!fork-sync.sh' ':!.fork' >/dev/null 2>&1; then
+		warn "Conflict markers detected after merging $b; re-resolving theme union."
+		f="packages/coding-agent/src/modes/interactive/theme/theme.ts"
+		if [[ -f .fork/resolve-theme-union.py ]] && python3 .fork/resolve-theme-union.py "$f"; then
+			git add "$f"
+			git commit --no-verify -q --amend --no-edit
+		else
+			die "Stray conflict markers after merging $b; resolve manually."
 		fi
 	fi
 done
