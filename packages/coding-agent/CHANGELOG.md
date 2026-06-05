@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `execCommand` swallowing the error message when process termination fails; the error is now surfaced in stderr.
+- Fixed `writeRawStdout` exiting without logging the cause; fatal stdout write errors now write a diagnostic to stderr before exit.
+- Fixed extension command and skill expansion error reports missing stack traces.
+
+### Changed
+
+- Changed `createEventBus` to accept an optional `onError` callback and write to stderr instead of using `console.error` (which corrupts TUI output).
+- Changed `initTheme` to return `{ fallback?: string }` so callers can detect and report theme load failures instead of silently falling back.
+
 ## [0.79.9] - 2026-06-20
 
 ### New Features
