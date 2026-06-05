@@ -41,7 +41,23 @@ set -euo pipefail
 #   - independent branches  = manifest features WITHOUT a "stackedOn" key
 #   - local-merge branches  = manifest features with "mergeIntoLocal": true
 #   - stacked/dependent branches keep their bespoke rebuild logic below
-MANIFEST=".fork/fork-manifest.json"
+#
+# The manifest is read from a stable location: the working-tree copy if present
+# (e.g. on feat/fork-tooling or local), otherwise extracted from the canonical
+# feat/fork-tooling branch. This keeps the script correct no matter which branch
+# is checked out when it starts.
+resolve_manifest() {
+	if [[ -f .fork/fork-manifest.json ]]; then
+		MANIFEST=".fork/fork-manifest.json"
+	elif git cat-file -e feat/fork-tooling:.fork/fork-manifest.json 2>/dev/null; then
+		MANIFEST="$(mktemp)"
+		git show feat/fork-tooling:.fork/fork-manifest.json > "$MANIFEST"
+		MANIFEST_IS_TEMP=1
+	else
+		echo "fork-sync: cannot locate .fork/fork-manifest.json" >&2
+		exit 2
+	fi
+}
 
 read_manifest_field() {
 	# $1 = a jq-like selector implemented in python. Prints one branch per line.
@@ -59,9 +75,11 @@ for f in data["features"]:
 PY
 }
 
-mapfile -t INDEPENDENT_BRANCHES < <(read_manifest_field independent)
-mapfile -t LOCAL_MERGE_BRANCHES < <(read_manifest_field local-merge)
-mapfile -t MANIFEST_ALL_BRANCHES < <(read_manifest_field all)
+# Populated after resolve_manifest() runs in the workflow section.
+INDEPENDENT_BRANCHES=()
+LOCAL_MERGE_BRANCHES=()
+MANIFEST_ALL_BRANCHES=()
+MANIFEST_IS_TEMP=0
 
 # Stacked/dependent branches keep bespoke rebuild logic in
 # rebuild_dependent_branches() because each has a different shape (cherry-pick
@@ -139,13 +157,31 @@ fi
 
 require_clean_tree
 
+# Resolve the manifest (working tree or feat/fork-tooling) and derive branch lists.
+resolve_manifest
+mapfile -t INDEPENDENT_BRANCHES < <(read_manifest_field independent)
+mapfile -t LOCAL_MERGE_BRANCHES < <(read_manifest_field local-merge)
+mapfile -t MANIFEST_ALL_BRANCHES < <(read_manifest_field all)
+if [[ "${MANIFEST_IS_TEMP:-0}" -eq 1 ]]; then
+	trap 'rm -f "$MANIFEST" "${FORK_SYNC_TMP:-}"' EXIT
+fi
+if [[ "${#LOCAL_MERGE_BRANCHES[@]}" -eq 0 ]]; then
+	die "Manifest produced no branches; refusing to rebuild an empty local."
+fi
 say "Ensuring fork git config is installed (merge driver + rerere)"
 if [[ -x .fork/setup-fork.sh ]]; then
 	./.fork/setup-fork.sh >/dev/null
+elif git cat-file -e feat/fork-tooling:.fork/setup-fork.sh 2>/dev/null; then
+	# Working tree lacks .fork (e.g. launched from a branch without it): run the
+	# canonical setup from feat/fork-tooling via a temp checkout of the .fork dir.
+	_setup_tmp="$(mktemp -d)"
+	git archive feat/fork-tooling .fork | tar -x -C "$_setup_tmp"
+	( cd "$REPO_ROOT" && bash "$_setup_tmp/.fork/setup-fork.sh" >/dev/null ) || \
+		warn "setup-fork.sh failed; CHANGELOG auto-merge may not be active."
+	rm -rf "$_setup_tmp"
 else
 	warn ".fork/setup-fork.sh not found; CHANGELOG auto-merge may not be active."
 fi
-
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_PREFIX="backup/sync-${TS}"
 
@@ -155,8 +191,18 @@ git fetch origin --prune
 
 if [[ "$DO_DRIFT" -eq 1 ]]; then
 	say "Checking feature drift against upstream/main"
+	# Resolve the drift checker from the working tree or feat/fork-tooling.
+	drift_script=""
+	drift_tmp=""
 	if [[ -f .fork/fork-drift-check.py ]]; then
-		if python3 .fork/fork-drift-check.py; then
+		drift_script=".fork/fork-drift-check.py"
+	elif git cat-file -e feat/fork-tooling:.fork/fork-drift-check.py 2>/dev/null; then
+		drift_tmp="$(mktemp)"
+		git show feat/fork-tooling:.fork/fork-drift-check.py > "$drift_tmp"
+		drift_script="$drift_tmp"
+	fi
+	if [[ -n "$drift_script" ]]; then
+		if python3 "$drift_script" --manifest "$MANIFEST"; then
 			: # all features ACTIVE
 		else
 			rc=$?
@@ -169,6 +215,7 @@ if [[ "$DO_DRIFT" -eq 1 ]]; then
 				warn "Drift check reported an error (exit $rc); continuing."
 			fi
 		fi
+		[[ -n "$drift_tmp" ]] && rm -f "$drift_tmp"
 	else
 		warn ".fork/fork-drift-check.py not found; skipping drift check."
 	fi
