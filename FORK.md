@@ -126,7 +126,20 @@ git rebase --continue
 ```
 
 Because `rerere` is enabled, resolving it once records the resolution for next
-time.
+time. Recurring genuine conflicts are also committed to the repo under
+`.fork/rr-cache/` and restored by `setup-fork.sh`, so they auto-resolve on a
+fresh clone too. Currently recorded:
+
+- `theme.ts` ThemeColor union (features add `thinkingMax`, `bashMode`,
+  `toolPath` to the same union) — also auto-unioned by
+  `.fork/resolve-theme-union.py` as a backstop.
+- `main.ts` interactive startup warnings (`feat/theme-missing-token-warning`
+  and `fix/improve-error-handling` both add a warning after `initTheme`; the
+  resolution keeps both).
+
+If you change one of those features and the recorded resolution goes stale,
+delete the matching entry under `.fork/rr-cache/`, re-resolve once, and copy the
+new `.git/rr-cache/<hash>/{preimage,postimage}` back into `.fork/rr-cache/`.
 
 ## Adding or changing a feature
 
