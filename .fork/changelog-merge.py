@@ -11,11 +11,12 @@ relative to the 3-way merge base, then re-inserts them under the matching
 `### <subsection>` of the *current* `[Unreleased]` section, skipping any bullet
 the other side already contains.
 
-Configured as a git merge driver (see .fork/setup-fork.sh):
+Configured as a git merge driver (see .fork/setup-fork.sh, which copies this
+script into .git/fork/ so it is reachable regardless of the checked-out branch):
 
     [merge "fork-changelog"]
         name = fork CHANGELOG union
-        driver = python3 .fork/changelog-merge.py %O %A %B %A %P
+        driver = python3 '<git-dir>/fork/changelog-merge.py' %O %A %B %A %P
 
 and mapped in .git/info/attributes (untracked, installed by setup-fork.sh):
 
