@@ -4,15 +4,19 @@
 #
 # Fork-specific helper (not from upstream). It performs the maintenance workflow:
 #   1. Fetch upstream + origin.
-#   2. Fast-forward `main` to `upstream/main` and push it.
-#   3. Rebase each independent feature branch onto the new `main`.
-#   4. Rebuild the stacked/dependent branches onto their dependencies.
-#   5. Rebuild the `local` integration branch (main + every feature merged).
-#   6. Build and run bounded sanity tests.
+#   2. Check feature drift against upstream (flag patches upstream absorbed).
+#   3. Fast-forward `main` to `upstream/main` and push it.
+#   4. Rebase each independent feature branch onto the new `main`.
+#   5. Rebuild the stacked/dependent branches onto their dependencies.
+#   6. Rebuild the `local` integration branch (main + every feature merged).
+#   7. Build and run bounded sanity tests.
 #
-# Branch model (see also AGENTS-fork notes):
+# Features are declared in .fork/fork-manifest.json (single source of truth);
+# the branch lists in this script are derived from it.
+#
+# Branch model (see also FORK.md):
 #   main   — pristine mirror of upstream/main (never holds fork commits)
-#   feat/* — one feature per branch; some are stacked (see DEPENDENCIES below)
+#   feat/* — one feature per branch; some are stacked (see manifest stackedOn)
 #   local  — main + all feat/* merged; this is the branch you run/build
 #
 # Safety:
@@ -22,53 +26,61 @@
 #   - Never runs the unbounded test suite (caps workers via VITEST_MAX_FORKS).
 #
 # Usage:
-#   ./fork-sync.sh            # full sync + rebuild + build + tests
-#   ./fork-sync.sh --no-push  # do everything locally, skip pushing to origin
-#   ./fork-sync.sh --no-test  # skip the build + test step at the end
+#   ./fork-sync.sh             # full sync + rebuild + build + tests
+#   ./fork-sync.sh --no-push   # do everything locally, skip pushing to origin
+#   ./fork-sync.sh --no-test   # skip the build + test step at the end
+#   ./fork-sync.sh --no-drift  # skip the upstream drift check
 #
 set -euo pipefail
 
 # ---- Configuration ---------------------------------------------------------
 
-# Independent feature branches: rebased directly onto main.
-INDEPENDENT_BRANCHES=(
-	"feat/fork-tooling"
-	"feat/theme-toolpath-color"
-	"feat/max-thinking-level"
-	"feat/markdown-codeblock-border-style"
-	"feat/test-bounded-pool"
-)
+# The fork's features live in .fork/fork-manifest.json (single source of truth).
+# The branch lists below are DERIVED from it so there is exactly one place to
+# edit when features change. Topology rules:
+#   - independent branches  = manifest features WITHOUT a "stackedOn" key
+#   - local-merge branches  = manifest features with "mergeIntoLocal": true
+#   - stacked/dependent branches keep their bespoke rebuild logic below
+MANIFEST=".fork/fork-manifest.json"
 
-# Stacked/dependent branches, expressed as "branch:base:commit_or_range".
-# Rebuilt by recreating <branch> on <base> and replaying the listed commits.
-# Keep these ranges in sync when you add commits to a dependent branch.
-#
-#   markdown-path-linkify   stacks on theme-toolpath-color (3 linkify commits)
-#   footer-thinking-color   stacks on max-thinking          (1 commit)
-#   theme-missing-token     needs max-thinking + toolpath   (merge + 1 commit)
-#
-# These are handled explicitly in rebuild_dependent_branches() because each has
-# a slightly different shape; edit that function if the topology changes.
+read_manifest_field() {
+	# $1 = a jq-like selector implemented in python. Prints one branch per line.
+	python3 - "$MANIFEST" "$1" <<'PY'
+import json, sys
+manifest, mode = sys.argv[1], sys.argv[2]
+data = json.load(open(manifest))
+for f in data["features"]:
+    if mode == "independent" and "stackedOn" not in f:
+        print(f["branch"])
+    elif mode == "local-merge" and f.get("mergeIntoLocal"):
+        print(f["branch"])
+    elif mode == "all":
+        print(f["branch"])
+PY
+}
 
-# Branches merged into `local` (leaf branches carry their own dependencies).
-LOCAL_MERGE_BRANCHES=(
-	"feat/fork-tooling"
-	"feat/markdown-path-linkify"
-	"feat/theme-missing-token-warning"
-	"feat/footer-thinking-level-color"
-	"feat/markdown-codeblock-border-style"
-	"feat/test-bounded-pool"
-)
+mapfile -t INDEPENDENT_BRANCHES < <(read_manifest_field independent)
+mapfile -t LOCAL_MERGE_BRANCHES < <(read_manifest_field local-merge)
+mapfile -t MANIFEST_ALL_BRANCHES < <(read_manifest_field all)
+
+# Stacked/dependent branches keep bespoke rebuild logic in
+# rebuild_dependent_branches() because each has a different shape (cherry-pick
+# vs merge). The manifest records their topology via "stackedOn":
+#   markdown-path-linkify   stacks on theme-toolpath-color
+#   footer-thinking-color   stacks on max-thinking
+#   theme-missing-token     needs max-thinking + toolpath
 
 # Cap test workers so the runner cannot storm the host (see feat/test-bounded-pool).
 export VITEST_MAX_FORKS="${VITEST_MAX_FORKS:-4}"
 
 DO_PUSH=1
 DO_TEST=1
+DO_DRIFT=1
 for arg in "$@"; do
 	case "$arg" in
 		--no-push) DO_PUSH=0 ;;
 		--no-test) DO_TEST=0 ;;
+		--no-drift) DO_DRIFT=0 ;;
 		*) echo "Unknown option: $arg" >&2; exit 2 ;;
 	esac
 done
@@ -113,9 +125,28 @@ say "Fetching upstream and origin"
 git fetch upstream --prune
 git fetch origin --prune
 
-ALL_BRANCHES=("main" "local" "${INDEPENDENT_BRANCHES[@]}"
-	"feat/markdown-path-linkify" "feat/footer-thinking-level-color"
-	"feat/theme-missing-token-warning")
+if [[ "$DO_DRIFT" -eq 1 ]]; then
+	say "Checking feature drift against upstream/main"
+	if [[ -f .fork/fork-drift-check.py ]]; then
+		if python3 .fork/fork-drift-check.py; then
+			: # all features ACTIVE
+		else
+			rc=$?
+			if [[ "$rc" -eq 3 ]]; then
+				warn "Some features look REDUNDANT upstream (see above). They are still"
+				warn "being applied; review .fork/fork-manifest.json and drop any that are"
+				warn "no longer needed. Continuing sync in 5s (Ctrl-C to stop)..."
+				sleep 5
+			else
+				warn "Drift check reported an error (exit $rc); continuing."
+			fi
+		fi
+	else
+		warn ".fork/fork-drift-check.py not found; skipping drift check."
+	fi
+fi
+
+ALL_BRANCHES=("main" "local" "${MANIFEST_ALL_BRANCHES[@]}")
 say "Creating backup tags under ${BACKUP_PREFIX}/"
 for b in "${ALL_BRANCHES[@]}"; do
 	if git rev-parse --verify "$b" >/dev/null 2>&1; then
@@ -239,8 +270,7 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 	fi
 
 	say "Running bounded sanity tests (VITEST_MAX_FORKS=${VITEST_MAX_FORKS})"
-	( cd packages/coding-agent && npx vitest --run \
-		--pool=forks --poolOptions.forks.singleFork=true --poolOptions.forks.maxForks=1 \
+	( cd packages/coding-agent && npx vitest --run --maxWorkers=1 --pool=forks \
 		test/theme-missing-tokens.test.ts test/footer-width.test.ts \
 		test/theme-toolpath.test.ts test/markdown-path-linkify.test.ts )
 fi
