@@ -10,11 +10,29 @@ upstream release.
 | Branch | Role |
 | --- | --- |
 | `main` | Pristine mirror of `upstream/main`. Never holds fork commits. |
-| `feat/*` | One feature per branch. Some are stacked (see below). |
+| `feat/*`, `fix/*`, `deps/*`, `test/*`, `refactor/*` | One feature/change per branch. Some are stacked (see below). |
 | `feat/fork-tooling` | Fork maintenance tooling (`.fork/`, `fork-sync.sh`, this doc). Merged into `local` like any other feature so it survives every rebuild. |
-| `local` | `main` + every `feat/*` merged. This is the branch you build and run. |
+| `local` | `main` + every merged feature. This is the branch you build and run. |
 
-Stacked features:
+Features are declared in `.fork/fork-manifest.json` — the single source of
+truth. `fork-sync.sh` derives its branch lists from it, so adding or removing a
+feature means editing the manifest, not the script.
+
+Current features (see the manifest for the authoritative list):
+
+- `feat/theme-toolpath-color` — optional `toolPath` theme token
+- `feat/max-thinking-level` — adds the `max` thinking level
+- `feat/markdown-codeblock-border-style` — configurable code block borders
+- `feat/test-bounded-pool` — caps vitest/Node test worker concurrency
+- `feat/markdown-path-linkify` — linkify file paths in markdown (stacked)
+- `feat/footer-thinking-level-color` — colored footer thinking indicator (stacked)
+- `feat/theme-missing-token-warning` — warn on themes missing tokens (stacked)
+- `deps/upgrade-vitest-4` — vitest 4.x security upgrade (GHSA-5xrq-8626-4rwp)
+- `fix/improve-error-handling` — stderr-based error surfacing, stack traces
+- `test/add-unit-tests-coverage` — unit tests for untested modules
+- `refactor/deduplicate-shared-utils` — dedup shared agent/coding-agent utils
+
+Stacked features (recorded via `stackedOn` in the manifest):
 
 - `feat/markdown-path-linkify` stacks on `feat/theme-toolpath-color`.
 - `feat/footer-thinking-level-color` stacks on `feat/max-thinking-level`.
@@ -47,12 +65,46 @@ is always installed before the first feature rebase.
 ./fork-sync.sh             # full sync + rebuild + bounded tests
 ./fork-sync.sh --no-push   # do everything locally, skip pushing to origin
 ./fork-sync.sh --no-test   # skip the build + test step
+./fork-sync.sh --no-drift  # skip the upstream drift check
 ```
 
-The script fast-forwards `main` to `upstream/main`, rebases each feature branch,
-rebuilds the stacked branches, and rebuilds `local`. It creates backup tags
-(`backup/sync-<timestamp>/*`) before rewriting history and uses
-`--force-with-lease` for all pushes.
+The script fast-forwards `main` to `upstream/main`, runs the drift check,
+rebases each feature branch, rebuilds the stacked branches, and rebuilds
+`local`. It creates backup tags (`backup/sync-<timestamp>/*`) before rewriting
+history and uses `--force-with-lease` for all pushes.
+
+## Dropping features upstream has absorbed
+
+To avoid maintaining patches upstream already shipped, every feature in the
+manifest carries a `drift` probe. `fork-sync.sh` runs the drift check after
+fetching upstream, and you can run it any time:
+
+```bash
+python3 .fork/fork-drift-check.py            # report against upstream/main
+python3 .fork/fork-drift-check.py --ref TAG  # test against a specific ref
+```
+
+Each feature is reported as:
+
+- **ACTIVE** — upstream still lacks it; keep maintaining it.
+- **REDUNDANT** — upstream appears to have absorbed it; review for removal.
+- **CHECK** — upstream structure changed enough that the probe can't decide.
+
+Probe types (declared per feature in the manifest):
+
+- `grep-absent` / `grep-present` — pattern (not) present in a file at the ref.
+- `path-absent` / `path-present` — a file (not) present at the ref.
+- `version-gte` — a dependency version at/above a threshold (e.g. vitest >= 4.1.0).
+
+When a feature is REDUNDANT and you confirm upstream covers it, drop it:
+
+```bash
+# 1. remove its entry from .fork/fork-manifest.json
+# 2. delete the local + remote branch
+git branch -D <branch>
+git push origin --delete <branch>
+# 3. re-run ./fork-sync.sh --no-push to rebuild local without it
+```
 
 ## Why CHANGELOG conflicts no longer stop the sync
 
@@ -80,8 +132,9 @@ time.
 
 1. Branch from `main`: `git switch -c feat/my-feature main`.
 2. Keep the feature self-contained; add a CHANGELOG bullet under `[Unreleased]`.
-3. Add the branch to the appropriate array in `fork-sync.sh`
-   (`INDEPENDENT_BRANCHES` or the stacked logic, and `LOCAL_MERGE_BRANCHES`).
+3. Add an entry to `.fork/fork-manifest.json` with a `drift` probe and, if it
+   depends on another feature, a `stackedOn` key. Set `mergeIntoLocal: true`
+   for leaf branches that should land in `local`.
 4. Run `./fork-sync.sh --no-push` to verify it rebuilds and tests cleanly.
 
 ## Checking what the fork carries vs upstream
