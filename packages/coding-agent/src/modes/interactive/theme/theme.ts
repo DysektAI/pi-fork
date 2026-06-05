@@ -821,7 +821,7 @@ export function setRegisteredThemes(themes: Theme[]): void {
 	}
 }
 
-export function initTheme(themeName?: string, enableWatcher: boolean = false): void {
+export function initTheme(themeName?: string, enableWatcher: boolean = false): { fallback?: string } {
 	const name = themeName ?? getDefaultTheme();
 	currentThemeName = name;
 	try {
@@ -829,11 +829,13 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 		if (enableWatcher) {
 			startThemeWatcher();
 		}
-	} catch (_error) {
-		// Theme is invalid - fall back to dark theme silently
+		return {};
+	} catch (error) {
+		// Theme is invalid - fall back to dark theme
 		currentThemeName = "dark";
 		setGlobalTheme(loadTheme("dark"));
-		// Don't start watcher for fallback theme
+		const message = error instanceof Error ? error.message : String(error);
+		return { fallback: `Theme "${name}" failed to load: ${message}. Using dark theme.` };
 	}
 }
 

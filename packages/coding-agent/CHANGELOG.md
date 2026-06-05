@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `createEventBus` to accept an optional `onError` callback and write to stderr instead of using `console.error` (which corrupts TUI output).
+- Changed `initTheme` to return `{ fallback?: string }` so callers can detect and report theme load failures instead of silently falling back.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
@@ -9,6 +14,9 @@
 - Fixed `--no-session --session-id` so ephemeral CLI runs can use deterministic session IDs for provider cache affinity ([#6070](https://github.com/earendil-works/pi/issues/6070)).
 - Fixed disk BMP image files to be detected, converted to PNG, and attached through `read` and CLI `@file` inputs ([#6047](https://github.com/earendil-works/pi/issues/6047)).
 - Fixed auto-retry for provider stream errors that explicitly tell callers to retry the request ([#6019](https://github.com/earendil-works/pi/issues/6019)).
+- Fixed `execCommand` swallowing the error message when process termination fails; the error is now surfaced in stderr.
+- Fixed `writeRawStdout` exiting without logging the cause; fatal stdout write errors now write a diagnostic to stderr before exit.
+- Fixed extension command and skill expansion error reports missing stack traces.
 
 ## [0.80.2] - 2026-06-23
 
