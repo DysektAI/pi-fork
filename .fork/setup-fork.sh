@@ -63,21 +63,31 @@ git config rerere.autoupdate true
 # (e.g. main.ts theme-warning overlap, theme.ts token unions) auto-resolve even
 # on a fresh clone or after the local rr-cache is cleared. We only add missing
 # entries; existing local resolutions are left untouched.
-RR_SRC="${TOPLEVEL}/.fork/rr-cache"
 RR_DST="${GIT_DIR}/rr-cache"
-if [[ -d "$RR_SRC" ]]; then
+RR_SRC=""
+RR_TMP=""
+if [[ -d "${TOPLEVEL}/.fork/rr-cache" ]]; then
+	RR_SRC="${TOPLEVEL}/.fork/rr-cache"
+elif git cat-file -t feat/fork-tooling:.fork/rr-cache >/dev/null 2>&1; then
+	RR_TMP="$(mktemp -d)"
+	git archive feat/fork-tooling .fork/rr-cache 2>/dev/null | tar -x -C "$RR_TMP" 2>/dev/null
+	RR_SRC="${RR_TMP}/.fork/rr-cache"
+fi
+if [[ -n "$RR_SRC" && -d "$RR_SRC" ]]; then
 	count=0
 	mkdir -p "$RR_DST"
 	for d in "$RR_SRC"/*/; do
 		[[ -d "$d" ]] || continue
 		name="$(basename "$d")"
-		if [[ ! -e "$RR_DST/$name/preimage" ]]; then
+		# Only restore complete (preimage + postimage) resolutions over a missing entry.
+		if [[ -e "$d/preimage" && -e "$d/postimage" && ! -e "$RR_DST/$name/postimage" ]]; then
 			mkdir -p "$RR_DST/$name"
-			cp "$d"preimage "$d"postimage "$RR_DST/$name/" 2>/dev/null && count=$((count + 1))
+			cp "$d/preimage" "$d/postimage" "$RR_DST/$name/" && count=$((count + 1))
 		fi
 	done
 	[[ "$count" -gt 0 ]] && say "Restored ${count} rerere resolution(s) into ${RR_DST}"
 fi
+[[ -n "$RR_TMP" ]] && rm -rf "$RR_TMP"
 
 if ! command -v python3 >/dev/null 2>&1; then
 	printf '\033[1;33m!! python3 not found on PATH; the CHANGELOG merge driver needs it.\033[0m\n'
