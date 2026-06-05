@@ -8,6 +8,9 @@
 #
 # The merge driver is wired up entirely through LOCAL git state so nothing fork-
 # specific lands in tracked files (the repo's .gitattributes is upstream-owned):
+#   - the driver SCRIPT is copied into .git/fork/ so it exists regardless of
+#     which branch is checked out (the tracked .fork/ copy only lives on the
+#     feat/fork-tooling branch, which is not present during feature rebases)
 #   - the driver command lives in .git/config (git requires it there)
 #   - the path->driver mapping lives in .git/info/attributes (untracked)
 # Every fresh clone must run this once.
@@ -16,17 +19,34 @@
 #
 set -euo pipefail
 
-GIT_DIR="$(git rev-parse --git-dir)"
-cd "$(git rev-parse --show-toplevel)"
+GIT_DIR="$(git rev-parse --absolute-git-dir)"
+TOPLEVEL="$(git rev-parse --show-toplevel)"
+cd "$TOPLEVEL"
 
 say() { printf '\033[1;36m==> %s\033[0m\n' "$*"; }
+warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
 
 ATTR_LINE='**/CHANGELOG.md merge=fork-changelog'
 ATTR_FILE="${GIT_DIR}/info/attributes"
+DRIVER_SRC="${TOPLEVEL}/.fork/changelog-merge.py"
+DRIVER_DST="${GIT_DIR}/fork/changelog-merge.py"
+
+say "Installing CHANGELOG merge driver into ${GIT_DIR}/fork (branch-independent)"
+mkdir -p "${GIT_DIR}/fork"
+if [[ -f "$DRIVER_SRC" ]]; then
+	cp "$DRIVER_SRC" "$DRIVER_DST"
+elif [[ ! -f "$DRIVER_DST" ]]; then
+	# Not on a branch that carries .fork/; recover the script from feat/fork-tooling.
+	if git cat-file -e feat/fork-tooling:.fork/changelog-merge.py 2>/dev/null; then
+		git show feat/fork-tooling:.fork/changelog-merge.py > "$DRIVER_DST"
+	else
+		warn "Cannot locate .fork/changelog-merge.py; CHANGELOG auto-merge disabled."
+	fi
+fi
 
 say "Registering fork CHANGELOG merge driver (local repo config)"
 git config merge.fork-changelog.name "fork CHANGELOG union"
-git config merge.fork-changelog.driver 'python3 .fork/changelog-merge.py %O %A %B %A %P'
+git config merge.fork-changelog.driver "python3 '${DRIVER_DST}' %O %A %B %A %P"
 
 say "Mapping CHANGELOG.md to the driver (.git/info/attributes, untracked)"
 mkdir -p "${GIT_DIR}/info"
@@ -44,7 +64,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 say "Done. Fork git config installed."
-echo "  - merge.fork-changelog driver -> .fork/changelog-merge.py"
+echo "  - merge.fork-changelog driver -> ${DRIVER_DST}"
 echo "  - ${ATTR_FILE} maps **/CHANGELOG.md -> fork-changelog"
 echo "  - rerere enabled (autoupdate on)"
 echo "Run ./fork-sync.sh to sync with upstream and rebuild the local branch."
