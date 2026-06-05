@@ -108,14 +108,20 @@ push_lease() {
 
 # ---- Workflow --------------------------------------------------------------
 
-REPO_ROOT="$(cd "$(dirname "$0")" && git rev-parse --show-toplevel)"
+# Anchor to the repo root. After a self-update re-exec the script runs from a
+# temp path, so prefer FORK_SYNC_ROOT when set; otherwise derive it from $0.
+if [[ -n "${FORK_SYNC_ROOT:-}" ]]; then
+	REPO_ROOT="$FORK_SYNC_ROOT"
+else
+	REPO_ROOT="$(cd "$(dirname "$0")" && git rev-parse --show-toplevel)"
+fi
 cd "$REPO_ROOT"
 
 # Self-update guard: the canonical fork-sync.sh + .fork tooling live on
 # feat/fork-tooling. Whichever branch you launch from, re-exec the canonical
 # version so a fix on feat/fork-tooling takes effect immediately (avoids the
 # bootstrap problem where `local` still carries an older script). The re-exec
-# stays anchored to the repo via FORK_SYNC_ROOT.
+# stays anchored to the repo via FORK_SYNC_ROOT and cleans its temp copy.
 if [[ "${FORK_SYNC_REEXEC:-0}" -ne 1 ]] && git rev-parse --verify -q feat/fork-tooling >/dev/null; then
 	canonical="$(git show feat/fork-tooling:fork-sync.sh 2>/dev/null || true)"
 	if [[ -n "$canonical" && "$canonical" != "$(cat "$REPO_ROOT/fork-sync.sh" 2>/dev/null)" ]]; then
@@ -123,12 +129,12 @@ if [[ "${FORK_SYNC_REEXEC:-0}" -ne 1 ]] && git rev-parse --verify -q feat/fork-t
 		tmp="$(mktemp)"
 		printf '%s' "$canonical" > "$tmp"
 		chmod +x "$tmp"
-		FORK_SYNC_REEXEC=1 FORK_SYNC_ROOT="$REPO_ROOT" exec bash "$tmp" "$@"
+		FORK_SYNC_REEXEC=1 FORK_SYNC_ROOT="$REPO_ROOT" FORK_SYNC_TMP="$tmp" exec bash "$tmp" "$@"
 	fi
 fi
-# When re-exec'd from a temp path, anchor back to the real repo root.
-if [[ -n "${FORK_SYNC_ROOT:-}" ]]; then
-	cd "$FORK_SYNC_ROOT"
+# Remove the temp copy left by a self-update re-exec once we are running.
+if [[ -n "${FORK_SYNC_TMP:-}" ]]; then
+	trap 'rm -f "$FORK_SYNC_TMP"' EXIT
 fi
 
 require_clean_tree
