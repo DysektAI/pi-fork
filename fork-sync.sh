@@ -26,10 +26,11 @@
 #   - Never runs the unbounded test suite (caps workers via VITEST_MAX_FORKS).
 #
 # Usage:
-#   ./fork-sync.sh             # full sync + rebuild + build + tests
-#   ./fork-sync.sh --no-push   # do everything locally, skip pushing to origin
-#   ./fork-sync.sh --no-test   # skip the build + test step at the end
-#   ./fork-sync.sh --no-drift  # skip the upstream drift check
+#   ./fork-sync.sh                 # full sync + rebuild + build + tests
+#   ./fork-sync.sh --no-push       # do everything locally, skip pushing to origin
+#   ./fork-sync.sh --no-test       # skip the build + test step at the end
+#   ./fork-sync.sh --no-drift      # skip the upstream drift check
+#   ./fork-sync.sh --keep-backups N  # retain N recent backup tag sets (default 5; 0 = keep all)
 #
 set -euo pipefail
 
@@ -94,13 +95,25 @@ export VITEST_MAX_FORKS="${VITEST_MAX_FORKS:-4}"
 DO_PUSH=1
 DO_TEST=1
 DO_DRIFT=1
-for arg in "$@"; do
-	case "$arg" in
+# How many recent backup/sync-* tag sets to retain after a successful sync.
+# Older sets are pruned so they cannot accumulate (see prune_backup_tags).
+# Override with --keep-backups N; N=0 keeps all (disables pruning).
+KEEP_BACKUPS=5
+while [[ $# -gt 0 ]]; do
+	case "$1" in
 		--no-push) DO_PUSH=0 ;;
 		--no-test) DO_TEST=0 ;;
 		--no-drift) DO_DRIFT=0 ;;
-		*) echo "Unknown option: $arg" >&2; exit 2 ;;
+		--keep-backups)
+			shift
+			[[ "${1:-}" =~ ^[0-9]+$ ]] || { echo "--keep-backups needs a non-negative integer" >&2; exit 2; }
+			KEEP_BACKUPS="$1" ;;
+		--keep-backups=*)
+			KEEP_BACKUPS="${1#*=}"
+			[[ "$KEEP_BACKUPS" =~ ^[0-9]+$ ]] || { echo "--keep-backups needs a non-negative integer" >&2; exit 2; } ;;
+		*) echo "Unknown option: $1" >&2; exit 2 ;;
 	esac
+	shift
 done
 
 # ---- Helpers ---------------------------------------------------------------
@@ -439,6 +452,26 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 fi
 
 push_lease local
+
+# Prune old backup tag sets so they cannot pile up across many syncs. Keeps the
+# KEEP_BACKUPS most recent backup/sync-<timestamp> sets (including this run's)
+# and deletes the rest locally. Timestamps sort lexically, so newest = last.
+# Local-only and reversible via reflog; never touches origin.
+prune_backup_tags() {
+	[[ "$KEEP_BACKUPS" -gt 0 ]] || { echo "  (backup pruning disabled: --keep-backups 0)"; return 0; }
+	local sets
+	mapfile -t sets < <(git tag -l 'backup/sync-*' | sed 's#/[^/]*$##' | sort -u)
+	local total="${#sets[@]}"
+	(( total > KEEP_BACKUPS )) || { echo "  ${total} backup set(s); within keep limit (${KEEP_BACKUPS})."; return 0; }
+	local drop=$(( total - KEEP_BACKUPS )) prefix
+	for prefix in "${sets[@]:0:$drop}"; do
+		git tag -d $(git tag -l "${prefix}/*") >/dev/null 2>&1 || true
+	done
+	echo "  pruned ${drop} old backup set(s); kept ${KEEP_BACKUPS} most recent."
+}
+
+say "Pruning old backup tags (keep ${KEEP_BACKUPS})"
+prune_backup_tags
 
 say "Done. local is rebuilt on upstream/main + all features."
 echo "Backups: tags under ${BACKUP_PREFIX}/  (delete with: git tag -d \$(git tag -l '${BACKUP_PREFIX}/*'))"
