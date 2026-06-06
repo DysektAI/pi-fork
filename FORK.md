@@ -136,6 +136,9 @@ fresh clone too. Currently recorded:
 - `main.ts` interactive startup warnings (`feat/theme-missing-token-warning`
   and `fix/improve-error-handling` both add a warning after `initTheme`; the
   resolution keeps both).
+- `footer-width.test.ts` import union (`feat/footer-thinking-level-color` adds
+  `theme`; upstream's cache-hit-rate test adds `stripAnsi`). The footer
+  cherry-pick block in `fork-sync.sh` auto-continues once rerere replays this.
 
 If you change one of those features and the recorded resolution goes stale,
 delete the matching entry under `.fork/rr-cache/`, re-resolve once, and copy the
