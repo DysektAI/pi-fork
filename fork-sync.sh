@@ -263,6 +263,31 @@ base_moved() {
 	return 1
 }
 
+# Returns 0 if rerere (autoupdate) has fully resolved the in-progress conflict:
+# no unmerged index entries remain and no stray conflict markers are left in
+# tracked files. Lets the cherry-pick/rebase blocks below auto-continue a
+# recurring conflict rerere already knows how to resolve (e.g. the
+# footer-width.test.ts import union) instead of aborting, honoring the FORK.md
+# promise that resolving a conflict once records it for next time.
+rerere_autoresolved() {
+	[[ -z "$(git ls-files -u)" ]] || return 1
+	if git grep -lE '^(<<<<<<<|>>>>>>>)' -- ':!fork-sync.sh' ':!.fork' >/dev/null 2>&1; then
+		return 1
+	fi
+	return 0
+}
+
+# Drive an in-progress rebase to completion while rerere keeps resolving each
+# stop. Returns 0 when the rebase finishes, 1 if a stop is left unresolved.
+continue_rebase_with_rerere() {
+	while [[ -d "$(git rev-parse --git-path rebase-merge)" || -d "$(git rev-parse --git-path rebase-apply)" ]]; do
+		rerere_autoresolved || return 1
+		git add -A
+		GIT_EDITOR=true git rebase --continue >/dev/null 2>&1 || return 1
+	done
+	return 0
+}
+
 rebuild_dependent_branches() {
 	# markdown-path-linkify: replay its commits onto the new toolpath tip.
 	if base_moved feat/theme-toolpath-color; then
@@ -271,8 +296,12 @@ rebuild_dependent_branches() {
 		old_toolpath="$(git rev-parse "${BACKUP_PREFIX}/feat-theme-toolpath-color")"
 		git switch feat/markdown-path-linkify -q
 		if ! git rebase --onto feat/theme-toolpath-color "$old_toolpath" feat/markdown-path-linkify; then
-			git rebase --abort || true
-			die "Rebase conflict in feat/markdown-path-linkify. Resolve manually."
+			# A recurring conflict may have been auto-resolved by rerere; drive the
+			# rebase to completion before giving up.
+			if ! continue_rebase_with_rerere; then
+				git rebase --abort || true
+				die "Rebase conflict in feat/markdown-path-linkify. Resolve manually."
+			fi
 		fi
 		push_lease feat/markdown-path-linkify
 	else
@@ -287,8 +316,16 @@ rebuild_dependent_branches() {
 		footer_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-footer-thinking-level-color")"
 		git switch -C feat/footer-thinking-level-color feat/max-thinking-level -q
 		if ! git cherry-pick "$footer_commit"; then
-			git cherry-pick --abort || true
-			die "Cherry-pick conflict in feat/footer-thinking-level-color. Resolve manually."
+			# Upstream footer changes recur in footer.ts/footer-width.test.ts; let
+			# rerere resolve the import/stat union and continue instead of aborting.
+			if rerere_autoresolved; then
+				git add -A
+				git cherry-pick --continue --no-edit || \
+					die "Cherry-pick resolution staged but continue failed in feat/footer-thinking-level-color. Resolve manually."
+			else
+				git cherry-pick --abort || true
+				die "Cherry-pick conflict in feat/footer-thinking-level-color. Resolve manually."
+			fi
 		fi
 		push_lease feat/footer-thinking-level-color
 	else
