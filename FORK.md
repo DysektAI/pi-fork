@@ -139,6 +139,24 @@ fresh clone too. Currently recorded:
 - `footer-width.test.ts` import union (`feat/footer-thinking-level-color` adds
   `theme`; upstream's cache-hit-rate test adds `stripAnsi`). The footer
   cherry-pick block in `fork-sync.sh` auto-continues once rerere replays this.
+- `settings-manager.ts` import union (`feat/markdown-codeblock-border-style`
+  adds the `CodeBlockBorderStyle` type import; upstream adds `randomUUID`).
+- `core/index.ts` export union (`fix/improve-error-handling` adds
+  `EventBusErrorHandler`; upstream adds the `areExperimentalFeaturesEnabled`
+  export).
+- `changelog.test.ts` add/add (upstream ships its own suite for
+  `normalizeChangelogLinks`; `test/add-unit-tests-coverage` adds suites for
+  `parseChangelog`/`compareVersions`/`getNewEntries`). The resolution keeps both
+  and renames the fork's local `entry` helper to `makeEntry` to avoid colliding
+  with upstream's top-level `entry` constant.
+- `compaction/utils.ts` (`refactor/deduplicate-shared-utils` replaces the inline
+  implementation with re-exports from `@earendil-works/pi-agent-core`; upstream
+  edits the inline `serializeConversation`). The resolution keeps the re-export
+  form — agent-core's implementation is equivalent (it uses `safeJsonStringify`).
+- `main.ts` import line (`feat/theme-missing-token-warning` adds
+  `getThemeMissingTokenWarning`; upstream restructured this region). The
+  resolution keeps `getThemeMissingTokenWarning` and drops the now-unused
+  `ExtensionSelectorComponent` import upstream replaced with `showStartupSelector`.
 
 If you change one of those features and the recorded resolution goes stale,
 delete the matching entry under `.fork/rr-cache/`, re-resolve once, and copy the
