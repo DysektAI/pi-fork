@@ -139,10 +139,11 @@
       "base": "main",
       "mergeIntoLocal": true,
       "drift": {
-        "type": "path-present",
+        "type": "grep-present",
         "ref": "upstream/main",
-        "path": "packages/coding-agent/test/changelog.test.ts",
-        "note": "Heuristic: REDUNDANT if upstream adds equivalent coverage for these modules."
+        "file": "packages/coding-agent/test/changelog.test.ts",
+        "pattern": "parseChangelog",
+        "note": "The branch adds parseChangelog/compareVersions/getNewEntries suites to changelog.test.ts plus 9 fork-only test files (ai/{abort-signals,hash,json-parse,sanitize-unicode}, agent/harness/{messages,shell-output}, coding-agent/mime, tui/{kill-ring,undo-stack}). Upstream now ships changelog.test.ts but only covers normalizeChangelogLinks, so the old path-present probe false-fired. This grep flips REDUNDANT only when upstream absorbs the fork's parseChangelog coverage; re-verify the other files before dropping."
       }
     },
     {
