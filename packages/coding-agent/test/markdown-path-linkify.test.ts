@@ -33,8 +33,14 @@ const OSC8_PREFIX = "\x1b]8;;";
 
 describe("markdown inline-code path linkify", () => {
 	let tempRoot: string;
+	let savedTermProgram: string | undefined;
 
 	beforeEach(() => {
+		// Pin TERM_PROGRAM so link-target assertions are deterministic regardless of
+		// where the suite runs (e.g. inside the VS Code integrated terminal). The
+		// VS Code scheme is exercised explicitly in its own block below.
+		savedTermProgram = process.env.TERM_PROGRAM;
+		delete process.env.TERM_PROGRAM;
 		tempRoot = mkdtempSync(join(tmpdir(), "pi-md-linkify-"));
 		mkdirSync(tempRoot, { recursive: true });
 
@@ -56,6 +62,11 @@ describe("markdown inline-code path linkify", () => {
 		resetCapabilitiesCache();
 		initTheme("dark");
 		rmSync(tempRoot, { recursive: true, force: true });
+		if (savedTermProgram === undefined) {
+			delete process.env.TERM_PROGRAM;
+		} else {
+			process.env.TERM_PROGRAM = savedTermProgram;
+		}
 	});
 
 	const writeFile = (name: string): string => {
@@ -122,5 +133,35 @@ describe("markdown inline-code path linkify", () => {
 
 		expect(out).toContain(TOOL_PATH_ANSI);
 		expect(out).not.toContain(OSC8_PREFIX);
+	});
+
+	describe("VS Code integrated terminal", () => {
+		beforeEach(() => {
+			process.env.TERM_PROGRAM = "vscode";
+		});
+
+		it("emits a vscode://file link instead of file:// so Remote-WSL paths resolve", () => {
+			const filePath = writeFile("vscode.txt");
+			const out = getMarkdownTheme(tempRoot).code(filePath);
+
+			expect(out).toContain(TOOL_PATH_ANSI);
+			expect(out).toContain(OSC8_PREFIX);
+			expect(out).toContain(`vscode://file${filePath}`);
+			expect(out).not.toContain(pathToFileURL(filePath).href);
+		});
+
+		it("maps a :line:col suffix into the vscode://file locator", () => {
+			const filePath = writeFile("withlinecol.ts");
+			const out = getMarkdownTheme(tempRoot).code(`${filePath}:42:7`);
+
+			expect(out).toContain(`vscode://file${filePath}:42:7`);
+		});
+
+		it("maps a bare :line suffix into the vscode://file locator", () => {
+			const filePath = writeFile("withline-only.ts");
+			const out = getMarkdownTheme(tempRoot).code(`${filePath}:42`);
+
+			expect(out).toContain(`vscode://file${filePath}:42`);
+		});
 	});
 });
