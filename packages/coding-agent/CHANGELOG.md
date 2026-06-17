@@ -8,6 +8,7 @@
 - Added extension entry renderers for persisted display-only session entries that are rendered in interactive mode without being sent to the model context.
 - Added an optional `toolPath` theme token that controls the color of file paths in built-in file tool titles (read/edit/write/grep/find/ls). Falls back to `accent` when a theme omits it, so existing themes render unchanged. See [Color Tokens](docs/themes.md#color-tokens).
 - Markdown inline code that resolves to an existing file path now renders with the `toolPath` color and an OSC 8 `file://` hyperlink, matching clickable tool paths. Relative paths resolve against the session cwd. Non-path inline code (shell commands, function calls, identifiers) and non-existent paths keep the `mdCode` color.
+- Markdown inline code that resolves to an existing file path now renders with the `toolPath` color and a clickable OSC 8 hyperlink, matching clickable tool paths. Relative paths resolve against the session cwd. In the VS Code integrated terminal the link uses the `vscode://file/<path>[:line[:col]]` scheme so it opens in the editor and resolves correctly under Remote-WSL/SSH (a raw `file://` URL is handed to the host OS and fails on remote paths); elsewhere it uses `file://`. Non-path inline code (shell commands, function calls, identifiers) and non-existent paths keep the `mdCode` color.
 
 ### Fixed
 
