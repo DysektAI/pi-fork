@@ -13,6 +13,7 @@ import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { resolveReadPathAsync, resolveToCwd } from "./path-utils.ts";
+import { extractOutline, renderOutline } from "./read-outline.ts";
 import { getTextOutput, renderToolPath, replaceTabs, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
@@ -21,6 +22,12 @@ const readSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
 	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+	view: Type.Optional(
+		Type.Union([Type.Literal("full"), Type.Literal("outline")], {
+			description:
+				"How to render the file. 'full' (default) returns file contents. 'outline' returns a line-numbered structural summary of declarations with bodies elided, for navigating large source files before reading specific ranges with offset/limit.",
+		}),
+	),
 });
 
 export type ReadToolInput = Static<typeof readSchema>;
@@ -62,7 +69,7 @@ export interface ReadToolOptions {
 	operations?: ReadOperations;
 }
 
-type ReadRenderArgs = { path?: string; file_path?: string; offset?: number; limit?: number };
+type ReadRenderArgs = { path?: string; file_path?: string; offset?: number; limit?: number; view?: string };
 
 function formatReadLineRange(args: ReadRenderArgs | undefined, theme: Theme): string {
 	if (args?.offset === undefined && args?.limit === undefined) return "";
@@ -73,7 +80,8 @@ function formatReadLineRange(args: ReadRenderArgs | undefined, theme: Theme): st
 
 function formatReadCall(args: ReadRenderArgs | undefined, theme: Theme, cwd: string): string {
 	const pathDisplay = renderToolPath(str(args?.file_path ?? args?.path), theme, cwd);
-	return `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}${formatReadLineRange(args, theme)}`;
+	const outline = args?.view === "outline" ? theme.fg("dim", " (outline)") : "";
+	return `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}${formatReadLineRange(args, theme)}${outline}`;
 }
 
 function trimTrailingEmptyLines(lines: string[]): string[] {
@@ -209,13 +217,13 @@ export function createReadToolDefinition(
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
+		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete. Use view="outline" to get a line-numbered structural summary of a large source file before reading specific ranges.`,
 		promptSnippet: "Read file contents",
 		promptGuidelines: ["Use read to examine files instead of cat or sed."],
 		parameters: readSchema,
 		async execute(
 			_toolCallId,
-			{ path, offset, limit }: { path: string; offset?: number; limit?: number },
+			{ path, offset, limit, view }: { path: string; offset?: number; limit?: number; view?: "full" | "outline" },
 			signal?: AbortSignal,
 			_onUpdate?,
 			ctx?,
@@ -267,6 +275,24 @@ export function createReadToolDefinition(
 								const textContent = buffer.toString("utf-8");
 								const allLines = textContent.split("\n");
 								const totalFileLines = allLines.length;
+								// Outline view: return a structural summary instead of file contents.
+								if (view === "outline") {
+									const language = getLanguageFromPath(absolutePath);
+									const outline = extractOutline(textContent, language);
+									if (outline.entries.length > 0) {
+										const displayPath = formatPathRelativeToCwdOrAbsolute(absolutePath, cwd);
+										const outlineText = renderOutline(outline, {
+											path: displayPath,
+											totalLines: totalFileLines,
+										});
+										if (aborted) return;
+										signal?.removeEventListener("abort", onAbort);
+										resolve({ content: [{ type: "text", text: outlineText }], details: undefined });
+										return;
+									}
+									// Fall through to a normal read when no symbols were found
+									// (unsupported language or a file without declarations).
+								}
 								// Apply offset if specified. Convert from 1-indexed input to 0-indexed array access.
 								const startLine = offset ? Math.max(0, offset - 1) : 0;
 								const startLineDisplay = startLine + 1;
