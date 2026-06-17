@@ -30,7 +30,7 @@
 #   ./fork-sync.sh --no-push       # do everything locally, skip pushing to origin
 #   ./fork-sync.sh --no-test       # skip the build + test step at the end
 #   ./fork-sync.sh --no-drift      # skip the upstream drift check
-#   ./fork-sync.sh --keep-backups N  # retain N recent backup tag sets (default 5; 0 = keep all)
+#   ./fork-sync.sh --keep-backups N  # retain N recent backup tag sets (default 2; 0 = keep all)
 #
 set -euo pipefail
 
@@ -98,7 +98,7 @@ DO_DRIFT=1
 # How many recent backup/sync-* tag sets to retain after a successful sync.
 # Older sets are pruned so they cannot accumulate (see prune_backup_tags).
 # Override with --keep-backups N; N=0 keeps all (disables pruning).
-KEEP_BACKUPS=5
+KEEP_BACKUPS=2
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--no-push) DO_PUSH=0 ;;
