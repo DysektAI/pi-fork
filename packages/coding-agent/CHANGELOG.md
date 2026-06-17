@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `view: "outline"` option to the `read` tool that returns a line-numbered structural summary of a source file (declarations with bodies elided) instead of full contents, so the model can navigate large files cheaply before reading specific ranges with `offset`/`limit`. Detection is dependency-free (heuristic, no tree-sitter or compiler) and covers C-like, Python, Ruby, Go, and Rust families; unsupported languages or files without declarations fall back to a normal read. Default is unchanged (`view: "full"`).
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
