@@ -17,6 +17,7 @@
 - Added cache-friendly dynamic tool loading for extension tools activated by tool results. Supported Anthropic and OpenAI Responses models load definitions where they become available, preserving the cached prompt prefix. See [Dynamic Tool Loading](docs/extensions.md#dynamic-tool-loading) ([#6474](https://github.com/earendil-works/pi-mono/pull/6474)).
 - Added inherited native `xhigh` and `max` thinking levels for Claude Fable 5 across all generated provider catalogs ([#6490](https://github.com/earendil-works/pi-mono/pull/6490) by [@davidbrai](https://github.com/davidbrai)).
 - Added `Ctrl+X` to copy the last assistant message, or the selected message in `/tree`.
+- Added a `view: "outline"` option to the `read` tool that returns a line-numbered structural summary of a source file (declarations with bodies elided) instead of full contents, so the model can navigate large files cheaply before reading specific ranges with `offset`/`limit`. Detection is dependency-free (heuristic, no tree-sitter or compiler) and covers C-like, Python, Ruby, Go, and Rust families; unsupported languages or files without declarations fall back to a normal read. Default is unchanged (`view: "full"`).
 
 ### Fixed
 
