@@ -33,6 +33,18 @@
       }
     },
     {
+      "branch": "feat/read-outline-view",
+      "summary": "Dependency-free 'view: outline' option on the read tool: line-numbered structural summary of source files (bodies elided) for cheap navigation of large files.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/src/core/tools/read-outline.ts",
+        "note": "REDUNDANT if upstream ships its own structural/outline read mode at this path or supersedes it."
+      }
+    },
+    {
       "branch": "feat/max-thinking-level",
       "summary": "Adds 'max' thinking level across providers and UI.",
       "base": "main",

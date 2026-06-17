@@ -21,6 +21,7 @@ feature means editing the manifest, not the script.
 Current features (see the manifest for the authoritative list):
 
 - `feat/theme-toolpath-color` — optional `toolPath` theme token
+- `feat/read-outline-view` — dependency-free `view: outline` read mode (structural summary)
 - `feat/max-thinking-level` — adds the `max` thinking level
 - `feat/markdown-codeblock-border-style` — configurable code block borders
 - `feat/test-bounded-pool` — caps vitest/Node test worker concurrency
