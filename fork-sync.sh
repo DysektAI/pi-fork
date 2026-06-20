@@ -322,6 +322,26 @@ rebuild_dependent_branches() {
 		push_lease feat/markdown-path-linkify
 	fi
 
+	# vscode-terminal-paths: stacks on markdown-path-linkify. Replay its commit
+	# onto the (possibly rebuilt) markdown-path-linkify tip. Must run AFTER the
+	# markdown rebuild above so it lands on the new base.
+	if base_moved feat/markdown-path-linkify; then
+		say "Rebuilding fix/vscode-terminal-paths on feat/markdown-path-linkify"
+		local old_mdlink
+		old_mdlink="$(git rev-parse "${BACKUP_PREFIX}/feat-markdown-path-linkify")"
+		git switch fix/vscode-terminal-paths -q
+		if ! git rebase --onto feat/markdown-path-linkify "$old_mdlink" fix/vscode-terminal-paths; then
+			if ! continue_rebase_with_rerere; then
+				git rebase --abort || true
+				die "Rebase conflict in fix/vscode-terminal-paths. Resolve manually."
+			fi
+		fi
+		push_lease fix/vscode-terminal-paths
+	else
+		say "fix/vscode-terminal-paths base unchanged; skipping rebuild"
+		push_lease fix/vscode-terminal-paths
+	fi
+
 	# footer-thinking-level-color: single commit on top of max-thinking.
 	if base_moved feat/max-thinking-level; then
 		say "Rebuilding feat/footer-thinking-level-color on feat/max-thinking-level"
