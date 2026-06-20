@@ -120,20 +120,6 @@
       }
     },
     {
-      "branch": "deps/upgrade-vitest-4",
-      "summary": "Upgrade vitest 3.2.4 -> 4.1.8 (GHSA-5xrq-8626-4rwp).",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "version-gte",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/package.json",
-        "jsonPath": "devDependencies.vitest",
-        "minVersion": "4.1.0",
-        "note": "REDUNDANT once upstream's vitest devDependency is >= 4.1.0."
-      }
-    },
-    {
       "branch": "fix/improve-error-handling",
       "summary": "Surface errors via stderr (avoid TUI corruption), add stack traces, preserve OAuth error cause.",
       "base": "main",

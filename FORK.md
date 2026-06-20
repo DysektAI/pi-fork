@@ -28,7 +28,6 @@ Current features (see the manifest for the authoritative list):
 - `feat/markdown-path-linkify` — linkify file paths in markdown (stacked)
 - `feat/footer-thinking-level-color` — colored footer thinking indicator (stacked)
 - `feat/theme-missing-token-warning` — warn on themes missing tokens (stacked)
-- `deps/upgrade-vitest-4` — vitest 4.x security upgrade (GHSA-5xrq-8626-4rwp)
 - `fix/improve-error-handling` — stderr-based error surfacing, stack traces
 - `test/add-unit-tests-coverage` — unit tests for untested modules
 - `refactor/deduplicate-shared-utils` — dedup shared agent/coding-agent utils
