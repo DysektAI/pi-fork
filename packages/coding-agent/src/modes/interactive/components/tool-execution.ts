@@ -133,7 +133,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private createCallFallback(): Component {
-		return new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0);
+		return new Text(theme.fg("toolTitle", theme.bold(`[${this.toolName}]`)), 0, 0);
 	}
 
 	private createResultFallback(): Component | undefined {
@@ -363,7 +363,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private formatToolExecution(): string {
-		let text = theme.fg("toolTitle", theme.bold(this.toolName));
+		let text = theme.fg("toolTitle", theme.bold(`[${this.toolName}]`));
 		const content = JSON.stringify(this.args, null, 2);
 		if (content) {
 			text += `\n\n${content}`;
