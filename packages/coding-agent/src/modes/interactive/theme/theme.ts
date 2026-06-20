@@ -18,6 +18,7 @@ import type { SourceInfo } from "../../../core/source-info.ts";
 import { closeWatcher, watchWithErrorHandler } from "../../../utils/fs-watch.ts";
 import { resolvePath } from "../../../utils/paths.ts";
 import { highlight, supportsLanguage } from "../../../utils/syntax-highlight.ts";
+import { isVscodeTerminal } from "../../../utils/terminal.ts";
 
 // ============================================================================
 // Types & Schema
@@ -1230,17 +1231,14 @@ export function getLanguageFromPath(filePath: string): string | undefined {
 const inlineCodePathExistsCache = new Map<string, boolean>();
 
 // Detect whether a markdown inline-code span refers to a real file on disk.
-// Returns the resolved absolute path (plus any trailing line/column locator)
-// when it exists, otherwise undefined. Existence is required so that non-path
-// inline code (shell commands, function calls, identifiers) is never linkified.
+// Returns the resolved absolute path when it exists, otherwise undefined. Any
+// trailing line/column locator (`:42`, `:42:7`, `:1-5`, `#L9`) is stripped
+// before the existence check. Existence is required so that non-path inline
+// code (shell commands, function calls, identifiers) is never linkified.
 // Positive results are cached.
-function resolveInlineCodePath(
-	raw: string,
-	cwd: string
-): { absolutePath: string; locator: string } | undefined {
+function resolveInlineCodePath(raw: string, cwd: string): string | undefined {
 	const match = raw.match(/^(.+?)((?::\d+(?:-\d+)?)|(?::\d+:\d+)|(?:#L\d+))$/);
 	const bare = match ? match[1] : raw;
-	const locator = match ? match[2] : "";
 	if (!bare || /\s/.test(bare)) return undefined;
 	const looksPathish =
 		bare.startsWith("/") ||
@@ -1251,7 +1249,7 @@ function resolveInlineCodePath(
 		/^[\w.-]+\.[a-zA-Z][a-zA-Z0-9]*$/.test(bare);
 	if (!looksPathish) return undefined;
 	const absolutePath = resolvePath(bare, cwd);
-	if (inlineCodePathExistsCache.get(absolutePath)) return { absolutePath, locator };
+	if (inlineCodePathExistsCache.get(absolutePath)) return absolutePath;
 	let exists = false;
 	try {
 		exists = fs.existsSync(absolutePath);
@@ -1260,44 +1258,30 @@ function resolveInlineCodePath(
 	}
 	if (!exists) return undefined;
 	inlineCodePathExistsCache.set(absolutePath, true);
-	return { absolutePath, locator };
-}
-
-// Build the OSC 8 target URL for a resolved file path.
-//
-// In the VS Code integrated terminal a raw file:// URL is handed to the host
-// OS protocol handler, which breaks under Remote-WSL/SSH: the Windows handler
-// receives a Linux path and fails with "system cannot find the file specified"
-// (0x2). VS Code instead understands the vscode://file/<abs>[:line[:col]]
-// scheme, which it resolves inside the remote workspace and opens in-editor.
-// Everywhere else, emit the standard file:// URL.
-function inlineCodeLinkTarget(absolutePath: string, locator: string): string {
-	if ((process.env.TERM_PROGRAM || "").toLowerCase() === "vscode") {
-		// vscode://file expects /path:line:col (a colon-delimited locator). Map
-		// the #Ln form and strip any -range so VS Code gets a position it parses.
-		let vscodeLocator = "";
-		const lineCol = locator.match(/^:(\d+):(\d+)$/);
-		const lineOnly = locator.match(/^:(\d+)(?:-\d+)?$/) || locator.match(/^#L(\d+)$/);
-		if (lineCol) {
-			vscodeLocator = `:${lineCol[1]}:${lineCol[2]}`;
-		} else if (lineOnly) {
-			vscodeLocator = `:${lineOnly[1]}`;
-		}
-		return `vscode://file${absolutePath}${vscodeLocator}`;
-	}
-	return pathToFileURL(absolutePath).href;
+	return absolutePath;
 }
 
 // Render markdown inline code. When the span resolves to a real file, color it
-// with toolPath and emit an OSC 8 hyperlink so it matches clickable tool paths.
-// Everything else falls back to the mdCode color.
+// with toolPath so it matches clickable tool paths. Everything else falls back
+// to the mdCode color.
+//
+// Link handling differs by terminal:
+//   - VS Code integrated terminal: emit styled PLAIN TEXT (no OSC 8). VS Code's
+//     built-in terminal link detector finds existing-file paths and opens them
+//     in the current window's editor, with :line:col support, and resolves them
+//     inside the active (incl. Remote-WSL) workspace. Wrapping the path in an
+//     OSC 8 hyperlink instead routes it to the URI/protocol handler, which under
+//     Remote-WSL hands the Linux path to the Windows host ("file not found"/0x2)
+//     or opens a new window at the folder rather than the file.
+//   - Other terminals: emit an OSC 8 file:// hyperlink when supported.
 function renderInlineCode(text: string, cwd: string): string {
 	const resolved = resolveInlineCodePath(text, cwd);
 	if (resolved) {
 		const styled = theme.fg("toolPath", theme.underline(text));
-		return getCapabilities().hyperlinks
-			? hyperlink(styled, inlineCodeLinkTarget(resolved.absolutePath, resolved.locator))
-			: styled;
+		if (isVscodeTerminal()) {
+			return styled;
+		}
+		return getCapabilities().hyperlinks ? hyperlink(styled, pathToFileURL(resolved).href) : styled;
 	}
 	return theme.fg("mdCode", text);
 }
