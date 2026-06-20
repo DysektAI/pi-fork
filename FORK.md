@@ -157,6 +157,12 @@ fresh clone too. Currently recorded:
   `getThemeMissingTokenWarning`; upstream restructured this region). The
   resolution keeps `getThemeMissingTokenWarning` and drops the now-unused
   `ExtensionSelectorComponent` import upstream replaced with `showStartupSelector`.
+- `agent/src/index.ts` (`refactor/deduplicate-shared-utils` added
+  `SUMMARIZATION_SYSTEM_PROMPT` plus the `compaction/utils.ts` re-export block to
+  the old flat `index.ts`; upstream split all exports into a new `base.ts` and
+  reduced `index.ts` to a `pi-ai` side-effect import + `export * from "./base.ts"`).
+  The resolution keeps upstream's slim `index.ts` and the fork's two additions now
+  live in `base.ts`.
 
 If you change one of those features and the recorded resolution goes stale,
 delete the matching entry under `.fork/rr-cache/`, re-resolve once, and copy the
