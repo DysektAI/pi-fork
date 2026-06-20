@@ -163,6 +163,14 @@ fresh clone too. Currently recorded:
   reduced `index.ts` to a `pi-ai` side-effect import + `export * from "./base.ts"`).
   The resolution keeps upstream's slim `index.ts` and the fork's two additions now
   live in `base.ts`.
+- `core/tools/bash.ts` `formatBashCall` (`feat/tool-call-headers` replaces the
+  inline `bash $ <command>` title with a bold `[Bash Tool]` header on its own line
+  plus the multi-line collapse; `feat/markdown-path-linkify` had relabeled the same
+  function to `bash $`). The resolution keeps `feat/tool-call-headers`' version
+  (header + collapse) — it supersedes the `bash $` label.
+- `core/tools/read.ts` `formatReadCall` (`feat/tool-call-headers` adds the
+  `[Read Tool]` header; `feat/read-outline-view` adds the ` (outline)` annotation).
+  The resolution UNIONS both: `[Read Tool]` header with the trailing outline note.
 
 If you change one of those features and the recorded resolution goes stale,
 delete the matching entry under `.fork/rr-cache/`, re-resolve once, and copy the
