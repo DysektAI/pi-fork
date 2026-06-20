@@ -156,6 +156,43 @@
         "pattern": "FileOperations",
         "note": "REDUNDANT if upstream exports the shared utilities itself."
       }
+    },
+    {
+      "branch": "feat/reasoning-trace-label",
+      "summary": "Prefix rendered reasoning/thinking blocks with a bold [Thinking] header so the trace is unambiguous at a glance (pi normalizes every provider's reasoning channel into one 'thinking' type).",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/modes/interactive/components/assistant-message.ts",
+        "pattern": "\\[Thinking\\]"
+      }
+    },
+    {
+      "branch": "feat/tool-call-headers",
+      "summary": "Render every tool call as a bold bracketed [X Tool] header on its own line with args beneath (bash/read/edit/write/ls/grep/find + generic fallback), and collapse multi-line bash commands into a single title line.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/tools/bash.ts",
+        "pattern": "\\[Bash Tool\\]"
+      }
+    },
+    {
+      "branch": "fix/vscode-terminal-paths",
+      "summary": "Open file paths in-window in the VS Code integrated terminal: emit styled plain text (no OSC 8) so VS Code's link detector resolves the file in the active Remote-WSL/SSH workspace instead of failing or opening a new window. isVscodeTerminal() helper kept local to coding-agent.",
+      "base": "feat/markdown-path-linkify",
+      "stackedOn": "feat/markdown-path-linkify",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/tools/render-utils.ts",
+        "pattern": "isVscodeTerminal"
+      }
     }
   ]
 }
