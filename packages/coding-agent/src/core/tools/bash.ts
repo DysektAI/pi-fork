@@ -203,7 +203,10 @@ function formatBashCall(args: { command?: string; timeout?: number } | undefined
 	const timeout = args?.timeout as number | undefined;
 	const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
 	const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
-	return theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
+	// Header on its own line, then the command beneath it, so it reads as a
+	// labeled tool call rather than "bash" running inline with the command.
+	const header = theme.fg("toolTitle", theme.bold("[Bash Tool]")) + timeoutSuffix;
+	return `${header}\n${theme.fg("toolTitle", `$ ${commandDisplay}`)}`;
 }
 
 function rebuildBashResultRenderComponent(
