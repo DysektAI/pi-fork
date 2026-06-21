@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `getOAuthApiKey` discarding the original error when token refresh fails; now includes the cause message and preserves the error chain.
+
 ## [0.79.9] - 2026-06-20
 
 ### Added

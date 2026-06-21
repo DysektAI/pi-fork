@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `createEventBus` to accept an optional `onError` callback and write to stderr instead of using `console.error` (which corrupts TUI output).
+- Changed `initTheme` to return `{ fallback?: string }` so callers can detect and report theme load failures instead of silently falling back.
+
+### Fixed
+
+- Fixed `execCommand` swallowing the error message when process termination fails; the error is now surfaced in stderr.
+- Fixed `writeRawStdout` exiting without logging the cause; fatal stdout write errors now write a diagnostic to stderr before exit.
+- Fixed extension command and skill expansion error reports missing stack traces.
+
 ### Added
 
 - Added a `view: "outline"` option to the `read` tool that returns a line-numbered structural summary of a source file (declarations with bodies elided) instead of full contents, so the model can navigate large files cheaply before reading specific ranges with `offset`/`limit`. Detection is dependency-free (heuristic, no tree-sitter or compiler) and covers C-like, Python, Ruby, Go, and Rust families; unsupported languages or files without declarations fall back to a normal read. Default is unchanged (`view: "full"`).
