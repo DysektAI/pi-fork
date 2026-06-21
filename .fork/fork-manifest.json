@@ -82,15 +82,15 @@
     },
     {
       "branch": "feat/markdown-path-linkify",
-      "summary": "Linkify existing file paths in markdown inline code; label bash tool calls.",
+      "summary": "Linkify existing file paths in markdown inline code (toolPath color + OSC 8 file:// hyperlink); also carries the vscode://file v2 path-link variant. Bash tool-title labeling moved to feat/tool-call-headers.",
       "base": "feat/theme-toolpath-color",
       "stackedOn": "feat/theme-toolpath-color",
       "mergeIntoLocal": true,
       "drift": {
         "type": "grep-absent",
         "ref": "upstream/main",
-        "file": "packages/coding-agent/src/core/tools/bash.ts",
-        "pattern": "bash \\$"
+        "file": "packages/coding-agent/src/modes/interactive/theme/theme.ts",
+        "pattern": "resolveInlineCodePath"
       }
     },
     {
