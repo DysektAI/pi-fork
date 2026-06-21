@@ -265,8 +265,9 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
 		outputBytesCount += lineBytes;
 	}
 
-	// If we exited due to line limit
-	if (outputLinesArr.length >= maxLines && outputBytesCount <= maxBytes) {
+	// If we exited due to line limit. Don't reclassify a byte-driven partial-line
+	// truncation (single oversized last line) as a line-limit truncation.
+	if (truncatedBy !== "bytes" && outputLinesArr.length >= maxLines && outputBytesCount <= maxBytes) {
 		truncatedBy = "lines";
 	}
 
