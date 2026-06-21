@@ -47,7 +47,10 @@ export class BashExecutionComponent extends Container {
 		this.contentContainer = new Container();
 		this.addChild(this.contentContainer);
 
-		// Command header
+		// Command header: bracketed title on its own line (consistent with agent
+		// tool calls' [Bash Tool] header), then the command beneath. [Bash] (not
+		// [Bash Tool]) marks this as a user-invoked ! command, not an agent tool call.
+		this.contentContainer.addChild(new Text(theme.fg(colorKey, theme.bold("[Bash]")), 1, 0));
 		const header = new Text(theme.fg(colorKey, theme.bold(`$ ${command}`)), 1, 0);
 		this.contentContainer.addChild(header);
 
@@ -134,7 +137,8 @@ export class BashExecutionComponent extends Container {
 		// Rebuild content container
 		this.contentContainer.clear();
 
-		// Command header
+		// Command header (bracketed title on its own line, then the command)
+		this.contentContainer.addChild(new Text(theme.fg("bashMode", theme.bold("[Bash]")), 1, 0));
 		const header = new Text(theme.fg("bashMode", theme.bold(`$ ${this.command}`)), 1, 0);
 		this.contentContainer.addChild(header);
 
