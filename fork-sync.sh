@@ -263,18 +263,23 @@ for b in "${INDEPENDENT_BRANCHES[@]}"; do
 	push_lease "$b"
 done
 
-# A dependent branch only needs rebuilding when one of its bases actually moved
-# since the pre-sync snapshot. base_moved <branch...> returns 0 (true) if any
-# listed base differs from its backup tag, 1 (false) if all bases are unchanged.
-base_moved() {
-	local base tag
+# A dependent branch needs rebuilding when it does not already contain the
+# CURRENT tip of each of its bases. needs_rebuild <dependent> <base...> returns
+# 0 (true) if any base tip is not an ancestor of the dependent, 1 (false) if the
+# dependent already sits on top of every base.
+#
+# Topology-based on purpose: an ancestry test reads the actual commit graph, so
+# it is correct whether this is a clean first run or a resume after a mid-sync
+# abort. (The earlier snapshot approach compared each base to a backup tag made
+# THIS run; on a resume the base was already rebased by the aborted run, so the
+# fresh tag equalled it and the check wrongly reported "unchanged", silently
+# skipping the dependent rebuild and stranding it on old upstream.)
+needs_rebuild() {
+	local dependent="$1"; shift
+	local base
 	for base in "$@"; do
-		tag="${BACKUP_PREFIX}/$(echo "$base" | tr '/' '-')"
-		if ! git rev-parse --verify -q "$tag" >/dev/null; then
-			return 0  # no snapshot: rebuild to be safe
-		fi
-		if [[ "$(git rev-parse "$base")" != "$(git rev-parse "$tag")" ]]; then
-			return 0
+		if ! git merge-base --is-ancestor "$base" "$dependent" 2>/dev/null; then
+			return 0  # base tip not yet contained in dependent: rebuild
 		fi
 	done
 	return 1
@@ -307,10 +312,15 @@ continue_rebase_with_rerere() {
 
 rebuild_dependent_branches() {
 	# markdown-path-linkify: replay its commits onto the new toolpath tip.
-	if base_moved feat/theme-toolpath-color; then
+	if needs_rebuild feat/markdown-path-linkify feat/theme-toolpath-color; then
 		say "Rebuilding feat/markdown-path-linkify on feat/theme-toolpath-color"
 		local old_toolpath
-		old_toolpath="$(git rev-parse "${BACKUP_PREFIX}/feat-theme-toolpath-color")"
+		# Cut point = where this dependent diverges from the (already-rebased) base.
+		# Deriving it from the branch graph is resume-safe; the old per-run backup
+		# tag pointed at the rebased base after a mid-sync abort and corrupted the
+		# replay range. rebase's patch-id dedup drops the base commits that are
+		# already in the new base, exactly as `git rebase main` does above.
+		old_toolpath="$(git merge-base feat/theme-toolpath-color feat/markdown-path-linkify)"
 		git switch feat/markdown-path-linkify -q
 		if ! git rebase --onto feat/theme-toolpath-color "$old_toolpath" feat/markdown-path-linkify; then
 			# A recurring conflict may have been auto-resolved by rerere; drive the
@@ -329,10 +339,11 @@ rebuild_dependent_branches() {
 	# vscode-terminal-paths: stacks on markdown-path-linkify. Replay its commit
 	# onto the (possibly rebuilt) markdown-path-linkify tip. Must run AFTER the
 	# markdown rebuild above so it lands on the new base.
-	if base_moved feat/markdown-path-linkify; then
+	if needs_rebuild fix/vscode-terminal-paths feat/markdown-path-linkify; then
 		say "Rebuilding fix/vscode-terminal-paths on feat/markdown-path-linkify"
 		local old_mdlink
-		old_mdlink="$(git rev-parse "${BACKUP_PREFIX}/feat-markdown-path-linkify")"
+		# Resume-safe cut point (see markdown-path-linkify above).
+		old_mdlink="$(git merge-base feat/markdown-path-linkify fix/vscode-terminal-paths)"
 		git switch fix/vscode-terminal-paths -q
 		if ! git rebase --onto feat/markdown-path-linkify "$old_mdlink" fix/vscode-terminal-paths; then
 			if ! continue_rebase_with_rerere; then
@@ -347,7 +358,7 @@ rebuild_dependent_branches() {
 	fi
 
 	# footer-thinking-level-color: single commit on top of max-thinking.
-	if base_moved feat/max-thinking-level; then
+	if needs_rebuild feat/footer-thinking-level-color feat/max-thinking-level; then
 		say "Rebuilding feat/footer-thinking-level-color on feat/max-thinking-level"
 		local footer_commit
 		footer_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-footer-thinking-level-color")"
@@ -371,7 +382,7 @@ rebuild_dependent_branches() {
 	fi
 
 	# theme-missing-token-warning: needs both token features, then 1 commit.
-	if base_moved feat/max-thinking-level feat/theme-toolpath-color; then
+	if needs_rebuild feat/theme-missing-token-warning feat/max-thinking-level feat/theme-toolpath-color; then
 		say "Rebuilding feat/theme-missing-token-warning on max-thinking + toolpath"
 		local warn_commit
 		warn_commit="$(git log --format=%H -1 "${BACKUP_PREFIX}/feat-theme-missing-token-warning")"
@@ -428,6 +439,24 @@ resolve_theme_token_union() {
 }
 
 rebuild_dependent_branches
+
+# Safety gate: every feature branch must now sit on the new main. A branch that
+# does not contain main is stale (e.g. a dependent rebuild that was wrongly
+# skipped) and would silently ship old upstream code via the merge into local.
+# Fail loudly and name the offenders instead of building a quietly-wrong local.
+say "Verifying all feature branches contain the new main"
+stale_branches=()
+for b in "${MANIFEST_ALL_BRANCHES[@]}"; do
+	git rev-parse --verify -q "$b" >/dev/null || continue
+	if ! git merge-base --is-ancestor main "$b" 2>/dev/null; then
+		stale_branches+=("$b")
+	fi
+done
+if [[ "${#stale_branches[@]}" -gt 0 ]]; then
+	for b in "${stale_branches[@]}"; do warn "  stale (not on new main): $b"; done
+	die "Refusing to rebuild local: the branches above are not on the new main. Re-run ./fork-sync.sh (resume-safe) or rebase them manually."
+fi
+echo "  all ${#MANIFEST_ALL_BRANCHES[@]} feature branches contain main"
 
 say "Rebuilding local integration branch"
 git switch -C local main -q
