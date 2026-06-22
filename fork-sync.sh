@@ -99,6 +99,10 @@ DO_DRIFT=1
 # Older sets are pruned so they cannot accumulate (see prune_backup_tags).
 # Override with --keep-backups N; N=0 keeps all (disables pruning).
 KEEP_BACKUPS=2
+# Preserve the original argv before the parse loop consumes it with `shift`.
+# The self-update re-exec below needs the flags intact; re-exec'ing with a
+# post-loop "$@" (empty) silently dropped --no-push/--no-test/--no-drift.
+FORK_SYNC_ARGS=("$@")
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--no-push) DO_PUSH=0 ;;
@@ -160,7 +164,7 @@ if [[ "${FORK_SYNC_REEXEC:-0}" -ne 1 ]] && git rev-parse --verify -q feat/fork-t
 		tmp="$(mktemp)"
 		printf '%s' "$canonical" > "$tmp"
 		chmod +x "$tmp"
-		FORK_SYNC_REEXEC=1 FORK_SYNC_ROOT="$REPO_ROOT" FORK_SYNC_TMP="$tmp" exec bash "$tmp" "$@"
+		FORK_SYNC_REEXEC=1 FORK_SYNC_ROOT="$REPO_ROOT" FORK_SYNC_TMP="$tmp" exec bash "$tmp" "${FORK_SYNC_ARGS[@]}"
 	fi
 fi
 # Remove the temp copy left by a self-update re-exec once we are running.
