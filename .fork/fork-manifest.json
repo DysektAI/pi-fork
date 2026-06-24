@@ -110,7 +110,10 @@
       "branch": "feat/theme-missing-token-warning",
       "summary": "Warn when a custom theme omits optional color tokens.",
       "base": "feat/max-thinking-level",
-      "stackedOn": ["feat/max-thinking-level", "feat/theme-toolpath-color"],
+      "stackedOn": [
+        "feat/max-thinking-level",
+        "feat/theme-toolpath-color"
+      ],
       "mergeIntoLocal": true,
       "drift": {
         "type": "grep-absent",
@@ -192,6 +195,102 @@
         "ref": "upstream/main",
         "file": "packages/coding-agent/src/core/tools/render-utils.ts",
         "pattern": "isVscodeTerminal"
+      }
+    },
+    {
+      "branch": "feat/task-tracker-extension",
+      "summary": "In-session to-do / plan tracking as an example extension (TaskCreate/TaskUpdate/TaskList/TaskGet/update_plan + /tasks + .pi/TODO.md export + task-state injection).",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/task-tracker.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/config-center-extension",
+      "summary": "Single /config command + SettingsList UI backed by a process-global registry other extensions opt into (per-extension settings in one place).",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/config-center.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/continue-button-extension",
+      "summary": "/continue + Ctrl+Shift+C to resume the previous task without retyping; queues as follow-up while streaming.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/continue-button.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/auto-update-extension",
+      "summary": "Opt-in automatic 'pi update --extensions' on startup (/auto-update on|off), OFF by default with a supply-chain caveat.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/auto-update.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/notes-box-extension",
+      "summary": "/note and /notes commands backed by a single global inbox file for capturing ideas without interrupting a run.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/notes-box.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/auto-title-extension",
+      "summary": "Automatic session titling from the whole transcript on a widening cadence; /title, /titles, Ctrl+Shift+T, registers a titles toggle into /config.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/auto-title.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/session-recap-extension",
+      "summary": "Subtle one-line recap after a quiet period via the cheapest available model; registers recaps + recap-model into /config.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/session-recap.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/credential-pool-extension",
+      "summary": "API-key rotation + OAuth refresh across provider pools, plus a secrets block resolving non-provider secrets into process.env at startup. Ships pools.example.json; real pools.json git-ignored.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/credential-pool/index.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
       }
     }
   ]
