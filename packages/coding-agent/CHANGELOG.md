@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `session-recap` example extension: after a quiet period it posts a one-line recap (time taken + what was done + what's next) using the cheapest available model. Toggle and model are registered into `/config` (`recaps`, `recap-model`).
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
