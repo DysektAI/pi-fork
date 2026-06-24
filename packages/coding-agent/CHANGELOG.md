@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `notes-box` example extension: `/note <text>` and `/notes [clear]` backed by a single global inbox file, for capturing ideas without leaving pi or interrupting a run.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
