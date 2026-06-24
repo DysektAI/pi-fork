@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `credential-pool` example extension: API-key rotation + OAuth refresh across provider pools (rotates on 429/401), plus a `secrets` block that resolves non-provider secrets (env/value/file/command) into `process.env` at startup as a single source. Ships `pools.example.json`; real `pools.json` is git-ignored.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
