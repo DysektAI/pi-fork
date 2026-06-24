@@ -6,6 +6,7 @@
 
 - Added public SDK exports for CLI-equivalent model and scoped-model resolution ([#6201](https://github.com/earendil-works/pi/issues/6201)).
 - Added extension entry renderers for persisted display-only session entries that are rendered in interactive mode without being sent to the model context.
+- Added a `config-center` example extension: a single `/config` command + `SettingsList` UI backed by a process-global registry that other extensions opt into (8-line helper, no shared import), so per-extension settings live in one place instead of scattered commands. Includes a CLI path (`/config <id> <value>`) and fuzzy search.
 
 ### Fixed
 
