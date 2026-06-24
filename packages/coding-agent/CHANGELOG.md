@@ -6,6 +6,7 @@
 
 - Added public SDK exports for CLI-equivalent model and scoped-model resolution ([#6201](https://github.com/earendil-works/pi/issues/6201)).
 - Added extension entry renderers for persisted display-only session entries that are rendered in interactive mode without being sent to the model context.
+- Added an `auto-update` example extension: opt-in automatic `pi update --extensions` on startup (OFF by default; `/auto-update on|off`), with a documented supply-chain caveat for auto-updating third-party extension code.
 
 ### Fixed
 
