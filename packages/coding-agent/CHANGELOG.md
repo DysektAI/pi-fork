@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added an `auto-update` example extension: opt-in automatic `pi update --extensions` on startup (OFF by default; `/auto-update on|off`), with a documented supply-chain caveat for auto-updating third-party extension code.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
