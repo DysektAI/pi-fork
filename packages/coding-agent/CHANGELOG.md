@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added an `auto-title` example extension: names sessions automatically from the whole transcript on a widening cadence (1, 2, 4, 8…) so titles broaden then settle; `/title`, `/titles on|off`, Ctrl+Shift+T, and a `titles` toggle registered into `/config`.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
