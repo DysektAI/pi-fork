@@ -6,6 +6,11 @@
 #   1. Runs the canonical fork-sync.sh (full sync + rebuild + build + tests),
 #      branch-agnostically (resolved from feat/fork-tooling), so dist/ is
 #      rebuilt in place and the ~/.local/bin/pi shim launches current code.
+#   1b. Updates installed pi packages (`pi update --extensions`) with the
+#      freshly built fork CLI, so git/npm extensions track their remotes
+#      without a manual `pi update --extensions`. Best-effort: a failed
+#      extension fetch is logged but never fails the unit or masks a sync
+#      conflict.
 #   2. Logs everything (timestamped) under $XDG_STATE_HOME/pi-fork/.
 #   3. On a conflict/error (fork-sync.sh exits nonzero), writes a CONFLICT
 #      marker file and exits nonzero so the systemd unit is marked failed.
@@ -61,6 +66,24 @@ chmod +x "$sync_tmp"
 FORK_SYNC_ROOT="$REPO_ROOT" bash "$sync_tmp" 2>&1 | tee -a "$LOG"
 rc="${PIPESTATUS[0]}"
 rm -f "$sync_tmp"
+
+# Update installed pi packages (git/npm extensions) with the freshly built fork
+# CLI. Extensions live under ~/.pi/agent and are independent of the fork rebase,
+# so run this regardless of the sync result and keep it non-fatal: a flaky
+# extension fetch must not mask a real sync conflict or trip the CONFLICT marker.
+# PI_SKIP_VERSION_CHECK matches the ~/.local/bin/pi launcher (a self-maintained
+# fork must never self-update into the npm package).
+CLI_JS="$REPO_ROOT/packages/coding-agent/dist/cli.js"
+if [[ -f "$CLI_JS" ]]; then
+	echo "$(ts) updating pi extensions" >> "$LOG"
+	if PI_SKIP_VERSION_CHECK=1 node "$CLI_JS" update --extensions >> "$LOG" 2>&1; then
+		echo "$(ts) pi extensions up to date" >> "$LOG"
+	else
+		echo "$(ts) WARNING: pi extension update failed (non-fatal); see log above" >> "$LOG"
+	fi
+else
+	echo "$(ts) WARNING: $CLI_JS missing; skipped extension update" >> "$LOG"
+fi
 
 if [[ "$rc" -eq 0 ]]; then
 	echo "$(ts) fork-auto-sync OK" >> "$LOG"
