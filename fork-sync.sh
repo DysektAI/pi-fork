@@ -311,16 +311,25 @@ continue_rebase_with_rerere() {
 }
 
 rebuild_dependent_branches() {
+	# Cut point for replaying a stacked branch onto its (already-rebased) base.
+	# We need "the old base tip this branch was built on", NOT merge-base: when the
+	# base was rebased THIS cycle, plain merge-base walks back to old main, so the
+	# --onto range wrongly re-includes the base's own commits. If one of those was
+	# itself rebased (its patch-id changed), it no longer dedups and re-applies as a
+	# conflict (this is what broke fix/vscode-terminal-paths every sync).
+	# `git merge-base --fork-point` reads the base branch's reflog to find the true
+	# fork even after the base moved -- correct AND resume-safe (no per-run tag).
+	# Fall back to plain merge-base if reflogs are unavailable (e.g. fresh clone).
+	fork_cut() { # <base> <dependent>
+		git merge-base --fork-point "$1" "$2" 2>/dev/null || git merge-base "$1" "$2"
+	}
+
 	# markdown-path-linkify: replay its commits onto the new toolpath tip.
 	if needs_rebuild feat/markdown-path-linkify feat/theme-toolpath-color; then
 		say "Rebuilding feat/markdown-path-linkify on feat/theme-toolpath-color"
 		local old_toolpath
-		# Cut point = where this dependent diverges from the (already-rebased) base.
-		# Deriving it from the branch graph is resume-safe; the old per-run backup
-		# tag pointed at the rebased base after a mid-sync abort and corrupted the
-		# replay range. rebase's patch-id dedup drops the base commits that are
-		# already in the new base, exactly as `git rebase main` does above.
-		old_toolpath="$(git merge-base feat/theme-toolpath-color feat/markdown-path-linkify)"
+		# Cut point = the old base tip this dependent was built on (see fork_cut).
+		old_toolpath="$(fork_cut feat/theme-toolpath-color feat/markdown-path-linkify)"
 		git switch feat/markdown-path-linkify -q
 		if ! git rebase --onto feat/theme-toolpath-color "$old_toolpath" feat/markdown-path-linkify; then
 			# A recurring conflict may have been auto-resolved by rerere; drive the
@@ -342,8 +351,8 @@ rebuild_dependent_branches() {
 	if needs_rebuild fix/vscode-terminal-paths feat/markdown-path-linkify; then
 		say "Rebuilding fix/vscode-terminal-paths on feat/markdown-path-linkify"
 		local old_mdlink
-		# Resume-safe cut point (see markdown-path-linkify above).
-		old_mdlink="$(git merge-base feat/markdown-path-linkify fix/vscode-terminal-paths)"
+		# Cut point = the old base tip this dependent was built on (see fork_cut).
+		old_mdlink="$(fork_cut feat/markdown-path-linkify fix/vscode-terminal-paths)"
 		git switch fix/vscode-terminal-paths -q
 		if ! git rebase --onto feat/markdown-path-linkify "$old_mdlink" fix/vscode-terminal-paths; then
 			if ! continue_rebase_with_rerere; then
