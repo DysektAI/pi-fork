@@ -6,6 +6,7 @@
 
 - Added public SDK exports for CLI-equivalent model and scoped-model resolution ([#6201](https://github.com/earendil-works/pi/issues/6201)).
 - Added extension entry renderers for persisted display-only session entries that are rendered in interactive mode without being sent to the model context.
+- Added a `credential-pool` example extension: API-key rotation + OAuth refresh across provider pools (rotates on 429/401), plus a `secrets` block that resolves non-provider secrets (env/value/file/command) into `process.env` at startup as a single source. Ships `pools.example.json`; real `pools.json` is git-ignored.
 
 ### Fixed
 
