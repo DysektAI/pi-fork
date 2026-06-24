@@ -171,6 +171,19 @@ fresh clone too. Currently recorded:
 - `core/tools/read.ts` `formatReadCall` (`feat/tool-call-headers` adds the
   `[Read Tool]` header; `feat/read-outline-view` adds the ` (outline)` annotation).
   The resolution UNIONS both: `[Read Tool]` header with the trailing outline note.
+- `ai/src/providers/{amazon-bedrock,azure-openai-responses,google,google-vertex}.ts`
+  (`feat/max-thinking-level`). Upstream 0.80.x split each provider into a thin
+  provider definition plus a separate `ai/src/api/*.ts` module, so the feature's
+  `max` additions to the old monolithic files conflict on rebase. The resolution
+  takes upstream's thin provider file and re-applies the `max` additions in the
+  new `api/*.ts` locations (`bedrock-converse-stream.ts` budget map + level line,
+  `azure-openai-responses.ts` `reasoningEffort` union, `google-generative-ai.ts`
+  and `google-vertex.ts` `ClampedThinkingLevel = Exclude<..., "xhigh" | "max">`).
+  Note: `fork-sync.sh`'s dependent-rebuild `merge-base` cut point can reach into
+  rewritten history once `feat/markdown-path-linkify` is rebuilt; if
+  `fix/vscode-terminal-paths` conflicts on a re-run, rebase it with the prior
+  run's `backup/sync-*/feat-markdown-path-linkify` tag as the cut point so only
+  its own commit replays.
 
 If you change one of those features and the recorded resolution goes stale,
 delete the matching entry under `.fork/rr-cache/`, re-resolve once, and copy the
