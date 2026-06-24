@@ -6,6 +6,7 @@
 
 - Added public SDK exports for CLI-equivalent model and scoped-model resolution ([#6201](https://github.com/earendil-works/pi/issues/6201)).
 - Added extension entry renderers for persisted display-only session entries that are rendered in interactive mode without being sent to the model context.
+- Added a `task-tracker` example extension: in-session to-do / plan tracking via `TaskCreate`/`TaskUpdate`/`TaskList`/`TaskGet`/`update_plan` tools, a `/tasks` view, `.pi/TODO.md` export, and automatic task-state injection so multi-step work stays tracked. Demonstrates building plan-mode/to-dos as an extension rather than in core.
 
 ### Fixed
 
