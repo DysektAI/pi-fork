@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `config-center` example extension: a single `/config` command + `SettingsList` UI backed by a process-global registry that other extensions opt into (8-line helper, no shared import), so per-extension settings live in one place instead of scattered commands. Includes a CLI path (`/config <id> <value>`) and fuzzy search.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
