@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `task-tracker` example extension: in-session to-do / plan tracking via `TaskCreate`/`TaskUpdate`/`TaskList`/`TaskGet`/`update_plan` tools, a `/tasks` view, `.pi/TODO.md` export, and automatic task-state injection so multi-step work stays tracked. Demonstrates building plan-mode/to-dos as an extension rather than in core.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
