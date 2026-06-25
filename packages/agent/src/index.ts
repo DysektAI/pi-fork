@@ -22,9 +22,17 @@ export {
 	generateSummary,
 	getLastAssistantUsage,
 	prepareCompaction,
+	SUMMARIZATION_SYSTEM_PROMPT,
 	serializeConversation,
 	shouldCompact,
 } from "./harness/compaction/compaction.ts";
+export {
+	computeFileLists,
+	createFileOps,
+	extractFileOpsFromMessage,
+	type FileOperations,
+	formatFileOperations,
+} from "./harness/compaction/utils.ts";
 export * from "./harness/messages.ts";
 export * from "./harness/prompt-templates.ts";
 export * from "./harness/session/jsonl-repo.ts";
