@@ -1,8 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
 	type EditorTheme,
 	getCapabilities,
+	hyperlink,
 	type MarkdownTheme,
 	type RgbColor,
 	type SelectListTheme,
@@ -14,6 +16,7 @@ import { Compile } from "typebox/compile";
 import { getCustomThemesDir, getThemesDir } from "../../../config.ts";
 import type { SourceInfo } from "../../../core/source-info.ts";
 import { closeWatcher, watchWithErrorHandler } from "../../../utils/fs-watch.ts";
+import { resolvePath } from "../../../utils/paths.ts";
 import { highlight, supportsLanguage } from "../../../utils/syntax-highlight.ts";
 
 // ============================================================================
@@ -90,6 +93,8 @@ const ThemeJsonSchema = Type.Object({
 		thinkingXhigh: ColorValueSchema,
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
+		// Tool path color (optional; falls back to accent when omitted)
+		toolPath: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -149,7 +154,8 @@ export type ThemeColor =
 	| "thinkingMedium"
 	| "thinkingHigh"
 	| "thinkingXhigh"
-	| "bashMode";
+	| "bashMode"
+	| "toolPath";
 
 export type ThemeBg =
 	| "selectedBg"
@@ -587,6 +593,10 @@ function loadThemeJson(name: string): ThemeJson {
 function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {
 	const colorMode = mode ?? (getCapabilities().trueColor ? "truecolor" : "256color");
 	const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
+	// toolPath is an optional token; fall back to accent so existing themes render unchanged.
+	if (themeJson.colors.toolPath === undefined) {
+		resolvedColors.toolPath = resolvedColors.accent;
+	}
 	const fgColors: Record<ThemeColor, string | number> = {} as Record<ThemeColor, string | number>;
 	const bgColors: Record<ThemeBg, string | number> = {} as Record<ThemeBg, string | number>;
 	const bgColorKeys: Set<string> = new Set([
@@ -1217,12 +1227,87 @@ export function getLanguageFromPath(filePath: string): string | undefined {
 	return extToLang[ext];
 }
 
-export function getMarkdownTheme(): MarkdownTheme {
+const inlineCodePathExistsCache = new Map<string, boolean>();
+
+// Detect whether a markdown inline-code span refers to a real file on disk.
+// Returns the resolved absolute path (plus any trailing line/column locator)
+// when it exists, otherwise undefined. Existence is required so that non-path
+// inline code (shell commands, function calls, identifiers) is never linkified.
+// Positive results are cached.
+function resolveInlineCodePath(
+	raw: string,
+	cwd: string
+): { absolutePath: string; locator: string } | undefined {
+	const match = raw.match(/^(.+?)((?::\d+(?:-\d+)?)|(?::\d+:\d+)|(?:#L\d+))$/);
+	const bare = match ? match[1] : raw;
+	const locator = match ? match[2] : "";
+	if (!bare || /\s/.test(bare)) return undefined;
+	const looksPathish =
+		bare.startsWith("/") ||
+		bare.startsWith("~") ||
+		bare.startsWith("./") ||
+		bare.startsWith("../") ||
+		bare.includes("/") ||
+		/^[\w.-]+\.[a-zA-Z][a-zA-Z0-9]*$/.test(bare);
+	if (!looksPathish) return undefined;
+	const absolutePath = resolvePath(bare, cwd);
+	if (inlineCodePathExistsCache.get(absolutePath)) return { absolutePath, locator };
+	let exists = false;
+	try {
+		exists = fs.existsSync(absolutePath);
+	} catch {
+		exists = false;
+	}
+	if (!exists) return undefined;
+	inlineCodePathExistsCache.set(absolutePath, true);
+	return { absolutePath, locator };
+}
+
+// Build the OSC 8 target URL for a resolved file path.
+//
+// In the VS Code integrated terminal a raw file:// URL is handed to the host
+// OS protocol handler, which breaks under Remote-WSL/SSH: the Windows handler
+// receives a Linux path and fails with "system cannot find the file specified"
+// (0x2). VS Code instead understands the vscode://file/<abs>[:line[:col]]
+// scheme, which it resolves inside the remote workspace and opens in-editor.
+// Everywhere else, emit the standard file:// URL.
+function inlineCodeLinkTarget(absolutePath: string, locator: string): string {
+	if ((process.env.TERM_PROGRAM || "").toLowerCase() === "vscode") {
+		// vscode://file expects /path:line:col (a colon-delimited locator). Map
+		// the #Ln form and strip any -range so VS Code gets a position it parses.
+		let vscodeLocator = "";
+		const lineCol = locator.match(/^:(\d+):(\d+)$/);
+		const lineOnly = locator.match(/^:(\d+)(?:-\d+)?$/) || locator.match(/^#L(\d+)$/);
+		if (lineCol) {
+			vscodeLocator = `:${lineCol[1]}:${lineCol[2]}`;
+		} else if (lineOnly) {
+			vscodeLocator = `:${lineOnly[1]}`;
+		}
+		return `vscode://file${absolutePath}${vscodeLocator}`;
+	}
+	return pathToFileURL(absolutePath).href;
+}
+
+// Render markdown inline code. When the span resolves to a real file, color it
+// with toolPath and emit an OSC 8 hyperlink so it matches clickable tool paths.
+// Everything else falls back to the mdCode color.
+function renderInlineCode(text: string, cwd: string): string {
+	const resolved = resolveInlineCodePath(text, cwd);
+	if (resolved) {
+		const styled = theme.fg("toolPath", theme.underline(text));
+		return getCapabilities().hyperlinks
+			? hyperlink(styled, inlineCodeLinkTarget(resolved.absolutePath, resolved.locator))
+			: styled;
+	}
+	return theme.fg("mdCode", text);
+}
+
+export function getMarkdownTheme(cwd: string = process.cwd()): MarkdownTheme {
 	return {
 		heading: (text: string) => theme.fg("mdHeading", text),
 		link: (text: string) => theme.fg("mdLink", text),
 		linkUrl: (text: string) => theme.fg("mdLinkUrl", text),
-		code: (text: string) => theme.fg("mdCode", text),
+		code: (text: string) => renderInlineCode(text, cwd),
 		codeBlock: (text: string) => theme.fg("mdCodeBlock", text),
 		codeBlockBorder: (text: string) => theme.fg("mdCodeBlockBorder", text),
 		quote: (text: string) => theme.fg("mdQuote", text),
