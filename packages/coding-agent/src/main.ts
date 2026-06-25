@@ -774,13 +774,16 @@ export async function main(args: string[], options?: MainOptions) {
 		stdinContent,
 	);
 	time("prepareInitialMessage");
-	initTheme(settingsManager.getTheme(), appMode === "interactive");
+	const themeInit = initTheme(settingsManager.getTheme(), appMode === "interactive");
 	time("initTheme");
 
-	// Surface a non-fatal hint when the active custom theme omits optional color
-	// tokens the app now supports (e.g. thinkingMax, toolPath), so it does not
-	// silently render with fallback colors.
 	if (appMode === "interactive") {
+		// Surface the silent theme fallback (when the configured theme failed to
+		// load) and a non-fatal hint when the active custom theme omits optional
+		// color tokens the app now supports (e.g. thinkingMax, toolPath).
+		if (themeInit.fallback) {
+			console.warn(chalk.yellow(themeInit.fallback));
+		}
 		const themeWarning = getThemeMissingTokenWarning();
 		if (themeWarning) {
 			console.warn(chalk.yellow(themeWarning));
