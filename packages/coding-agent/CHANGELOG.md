@@ -14,6 +14,7 @@
 
 ### Changed
 
+- Changed the interactive `/model` selector to show the provider first as a padded `[provider]` badge so model ids line up in a column for easier scanning.
 - Changed inherited pi-ai `ApiKeyCredential` to use the `auth.json`-compatible discriminator `type: "api_key"` and provider-scoped `env` values instead of `type: "api-key"` and metadata.
 - Renamed the inherited agent-core public harness shell execution options type from `ExecutionEnvExecOptions` to `ShellExecOptions`.
 
