@@ -305,6 +305,18 @@
         "pattern": "providerWidth",
         "note": "REDUNDANT if upstream reworks the selector to lead with the provider badge."
       }
+    },
+    {
+      "branch": "feat/web-search-extension",
+      "summary": "web_search/web_fetch tools via Brave Search API with DuckDuckGo Lite fallback; inline result rendering, runtime backend toggle via /config web-search-backend, once-per-session search directive.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/web-search.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
     }
   ]
 }
