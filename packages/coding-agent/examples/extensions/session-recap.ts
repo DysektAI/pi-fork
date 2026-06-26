@@ -88,6 +88,7 @@ function registerSetting(s: {
 
 export default function (pi: ExtensionAPI) {
 	let enabled = true;
+	let hintShown = false;
 	let recapModelOverride = "auto";
 	let requestStart = 0;
 	let pendingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -211,7 +212,8 @@ export default function (pi: ExtensionAPI) {
 						// No recap on failure — timing-only fallback below
 					}
 
-					const hint = " (disable: /config recaps off)";
+					const hint = hintShown ? "" : " (disable: /config recaps off)";
+					if (recap) hintShown = true;
 					const content = recap ? `${doneStr}  ※ recap: ${recap}${hint}` : doneStr;
 					pi.sendMessage({
 						customType: "session-recap",
