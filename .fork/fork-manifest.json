@@ -292,6 +292,19 @@
         "path": "packages/coding-agent/examples/extensions/credential-pool/index.ts",
         "note": "Example extension. REDUNDANT if upstream ships this example at this path."
       }
+    },
+    {
+      "branch": "feat/model-selector-provider-first",
+      "summary": "Interactive /model selector shows the provider first as a padded [provider] badge so model ids align in a column.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/modes/interactive/components/model-selector.ts",
+        "pattern": "providerWidth",
+        "note": "REDUNDANT if upstream reworks the selector to lead with the provider badge."
+      }
     }
   ]
 }
