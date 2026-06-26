@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `discord` example extension: a single generic tool that calls the Discord REST API (v10) with a method, path, and optional JSON body, authenticated via `DISCORD_BOT_TOKEN`. Lets the agent read/send messages, manage channels/roles/guilds, and summarize chat without an MCP server.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
