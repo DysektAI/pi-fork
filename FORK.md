@@ -31,6 +31,7 @@ Current features (see the manifest for the authoritative list):
 - `fix/improve-error-handling` — stderr-based error surfacing, stack traces
 - `test/add-unit-tests-coverage` — unit tests for untested modules
 - `refactor/deduplicate-shared-utils` — dedup shared agent/coding-agent utils
+- `feat/model-selector-provider-first` — render `/model` rows as `[provider] model-id` with a padded provider column
 
 Stacked features (recorded via `stackedOn` in the manifest):
 
