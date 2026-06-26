@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a `web-search` example extension: Claude Code / Codex-style `web_search` and `web_fetch` tools backed by the Brave Search API with a keyless DuckDuckGo Lite fallback. Search results render inline (title + domain) in the transcript, the backend is selectable at runtime via `/config web-search-backend` (`auto`/`brave`/`duckduckgo`), and the search directive is injected once per session instead of every turn.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).
