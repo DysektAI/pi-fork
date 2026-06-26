@@ -317,6 +317,18 @@
         "path": "packages/coding-agent/examples/extensions/web-search.ts",
         "note": "Example extension. REDUNDANT if upstream ships this example at this path."
       }
+    },
+    {
+      "branch": "feat/discord-extension",
+      "summary": "Generic Discord REST API (v10) tool authenticated via DISCORD_BOT_TOKEN; one tool handles any route (messages, channels, roles, guilds, chat summaries). No MCP server.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/discord.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
     }
   ]
 }
