@@ -21,6 +21,7 @@
 - Added a `session-recap` example extension: after a quiet period it posts a one-line recap (time taken + what was done + what's next) using the cheapest available model. Toggle and model are registered into `/config` (`recaps`, `recap-model`).
 - Added a `credential-pool` example extension: API-key rotation + OAuth refresh across provider pools (rotates on 429/401), plus a `secrets` block that resolves non-provider secrets (env/value/file/command) into `process.env` at startup as a single source. Ships `pools.example.json`; real `pools.json` is git-ignored.
 - Added a `web-search` example extension: Claude Code / Codex-style `web_search` and `web_fetch` tools backed by the Brave Search API with a keyless DuckDuckGo Lite fallback. Search results render inline (title + domain) in the transcript, the backend is selectable at runtime via `/config web-search-backend` (`auto`/`brave`/`duckduckgo`), and the search directive is injected once per session instead of every turn.
+- Added a `discord` example extension: a single generic tool that calls the Discord REST API (v10) with a method, path, and optional JSON body, authenticated via `DISCORD_BOT_TOKEN`. Lets the agent read/send messages, manage channels/roles/guilds, and summarize chat without an MCP server.
 
 ### Fixed
 
