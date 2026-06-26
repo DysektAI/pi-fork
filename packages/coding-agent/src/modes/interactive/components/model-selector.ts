@@ -236,6 +236,14 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		);
 		const endIndex = Math.min(startIndex + maxVisible, this.filteredModels.length);
 
+		// Width of the provider column (across the visible slice) so model ids align
+		// after the leading [provider] badge.
+		let providerWidth = 0;
+		for (let i = startIndex; i < endIndex; i++) {
+			const item = this.filteredModels[i];
+			if (item) providerWidth = Math.max(providerWidth, item.provider.length + 2);
+		}
+
 		// Show visible slice of filtered models
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredModels[i];
@@ -244,18 +252,16 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			const isSelected = i === this.selectedIndex;
 			const isCurrent = modelsAreEqual(this.currentModel, item.model);
 
+			const badgeText = `[${item.provider}]`.padEnd(providerWidth);
+			const providerBadge = theme.fg("muted", badgeText);
+			const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+
 			let line = "";
 			if (isSelected) {
 				const prefix = theme.fg("accent", "→ ");
-				const modelText = `${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
-				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = `${prefix + theme.fg("accent", modelText)} ${providerBadge}${checkmark}`;
+				line = `${prefix}${providerBadge} ${theme.fg("accent", item.id)}${checkmark}`;
 			} else {
-				const modelText = `  ${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
-				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = `${modelText} ${providerBadge}${checkmark}`;
+				line = `  ${providerBadge} ${item.id}${checkmark}`;
 			}
 
 			this.listContainer.addChild(new Text(line, 0, 0));
