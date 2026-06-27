@@ -109,9 +109,7 @@ export class AssistantMessageComponent extends Container {
 				} else {
 					// Label the trace so it's unambiguous at a glance (pi normalizes
 					// Anthropic "thinking" and OpenAI "reasoning" into one channel).
-					this.contentContainer.addChild(
-						new Text(theme.bold(theme.fg("thinkingText", "[Thinking]")), 1, 0),
-					);
+					this.contentContainer.addChild(new Text(theme.bold(theme.fg("thinkingText", "[Thinking]")), 1, 0));
 					// Thinking traces in thinkingText color, italic
 					this.contentContainer.addChild(
 						new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {

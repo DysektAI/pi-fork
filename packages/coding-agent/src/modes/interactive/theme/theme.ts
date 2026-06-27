@@ -895,9 +895,7 @@ export function getThemeMissingTokenWarning(activeTheme: Theme = theme): string 
 	if (missing.length === 0) return undefined;
 
 	const label = activeTheme.name ? `"${activeTheme.name}"` : "your custom theme";
-	const lines = missing.map(
-		({ token, fallback, note }) => `  - ${token}: using ${fallback} (controls ${note})`,
-	);
+	const lines = missing.map(({ token, fallback, note }) => `  - ${token}: using ${fallback} (controls ${note})`);
 	return (
 		`Theme ${label} is missing optional color tokens:\n${lines.join("\n")}\n` +
 		`Add them to ${activeTheme.sourcePath} to pick your own colors. ` +

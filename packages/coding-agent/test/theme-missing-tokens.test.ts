@@ -2,10 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-	getThemeMissingTokenWarning,
-	loadThemeFromPath,
-} from "../src/modes/interactive/theme/theme.ts";
+import { getThemeMissingTokenWarning, loadThemeFromPath } from "../src/modes/interactive/theme/theme.ts";
 
 type ThemeFile = {
 	name: string;
