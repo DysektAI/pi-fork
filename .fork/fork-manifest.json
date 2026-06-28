@@ -331,6 +331,43 @@
         "pattern": "GetExtensionsHandler",
         "note": "REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
       }
+    },
+    {
+      "branch": "feat/web-search-extension",
+      "summary": "web_search/web_fetch tools via Brave Search API with DuckDuckGo Lite fallback; inline result rendering, runtime backend toggle via /config web-search-backend, once-per-session search directive.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/web-search.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/discord-extension",
+      "summary": "Generic Discord REST API (v10) tool authenticated via DISCORD_BOT_TOKEN; one tool handles any route (messages, channels, roles, guilds, chat summaries). No MCP server.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "path-absent",
+        "ref": "upstream/main",
+        "path": "packages/coding-agent/examples/extensions/discord.ts",
+        "note": "Example extension. REDUNDANT if upstream ships this example at this path."
+      }
+    },
+    {
+      "branch": "feat/strip-ghost-tokens",
+      "summary": "Strip zero-width / invisible 'ghost' code points (ZWSP, word joiner, BOM, soft hyphen, invisible math operators, U+E0000-E007F TAG block) from outgoing text via sanitizeSurrogates, cutting wasted tokens and a hidden-instruction injection channel across all providers. Preserves ZWJ/ZWNJ, bidi marks and emoji variation selectors; opt out with PI_KEEP_GHOST_TOKENS=1.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/utils/sanitize-unicode.ts",
+        "pattern": "stripGhostTokens",
+        "note": "REDUNDANT if upstream adds its own zero-width/ghost-character stripping in sanitize-unicode."
+      }
     }
   ]
 }
