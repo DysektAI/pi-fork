@@ -1524,6 +1524,26 @@ Use `sourceInfo` as the canonical provenance field. Do not infer ownership from 
 Built-in interactive commands (like `/model` and `/settings`) are not included here. They are handled only in interactive
 mode and would not execute if sent via `prompt`.
 
+### pi.getExtensions()
+
+Get the extensions loaded in the current session, with canonical scope/source metadata.
+
+```typescript
+const extensions = pi.getExtensions();
+const userExtensions = extensions.filter((extension) => extension.scope === "user");
+```
+
+Each entry has this shape:
+
+```typescript
+{
+  name: string;
+  path: string;
+  scope: "project" | "user" | "package" | "cli";
+  source?: string;
+}
+```
+
 ### pi.registerMessageRenderer(customType, renderer)
 
 Register a custom TUI renderer for custom messages with your `customType`. Custom messages are created with `pi.sendMessage()` and participate in LLM context. See [Custom UI](#custom-ui).
