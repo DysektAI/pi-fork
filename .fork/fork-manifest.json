@@ -329,6 +329,45 @@
         "path": "packages/coding-agent/examples/extensions/discord.ts",
         "note": "Example extension. REDUNDANT if upstream ships this example at this path."
       }
+    },
+    {
+      "branch": "fix/openai-auth-error",
+      "summary": "OpenAI-compatible streams surface a clear authentication-failure message on HTTP 401/403 naming the provider and the configured API key source (env var / models.json), without echoing the key, instead of an opaque status-code error.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/api/openai-completions.ts",
+        "pattern": "formatErrorMessage",
+        "note": "REDUNDANT if upstream adds its own auth-failure messaging for 401/403 in openai-completions."
+      }
+    },
+    {
+      "branch": "feat/extensions-getextensions-api",
+      "summary": "Adds pi.getExtensions() to the extension API, returning loaded extensions with canonical name/path/scope/source metadata.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/extensions/types.ts",
+        "pattern": "GetExtensionsHandler",
+        "note": "REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
+      }
+    },
+    {
+      "branch": "feat/strip-ghost-tokens",
+      "summary": "Strip zero-width / invisible 'ghost' code points (ZWSP, word joiner, BOM, soft hyphen, invisible math operators, U+E0000-E007F TAG block) from outgoing text via sanitizeSurrogates, cutting wasted tokens and a hidden-instruction injection channel across all providers. Preserves ZWJ/ZWNJ, bidi marks and emoji variation selectors; opt out with PI_KEEP_GHOST_TOKENS=1.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/utils/sanitize-unicode.ts",
+        "pattern": "stripGhostTokens",
+        "note": "REDUNDANT if upstream adds its own zero-width/ghost-character stripping in sanitize-unicode."
+      }
     }
   ]
 }
