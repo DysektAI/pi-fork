@@ -90,9 +90,9 @@ export type {
 	InputEventResult,
 	InputSource,
 	KeybindingsManager,
+	LoadExtensionsResult,
 	LoadedExtensionInfo,
 	LoadedExtensionScope,
-	LoadExtensionsResult,
 	LsToolCallEvent,
 	LsToolResultEvent,
 	// Events - Message
