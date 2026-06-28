@@ -305,6 +305,32 @@
         "pattern": "providerWidth",
         "note": "REDUNDANT if upstream reworks the selector to lead with the provider badge."
       }
+    },
+    {
+      "branch": "fix/openai-auth-error",
+      "summary": "OpenAI-compatible streams surface a clear authentication-failure message naming the provider on HTTP 401/403, instead of an opaque status-code error.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/api/openai-completions.ts",
+        "pattern": "formatErrorMessage",
+        "note": "REDUNDANT if upstream adds its own auth-failure messaging for 401/403 in openai-completions."
+      }
+    },
+    {
+      "branch": "feat/extensions-getextensions-api",
+      "summary": "Adds pi.getExtensions() to the extension API, returning loaded extensions with canonical name/path/scope/source metadata.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/extensions/types.ts",
+        "pattern": "GetExtensionsHandler",
+        "note": "REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
+      }
     }
   ]
 }
