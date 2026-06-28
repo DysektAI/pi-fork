@@ -308,7 +308,7 @@
     },
     {
       "branch": "fix/openai-auth-error",
-      "summary": "OpenAI-compatible streams surface a clear authentication-failure message naming the provider on HTTP 401/403, instead of an opaque status-code error.",
+      "summary": "OpenAI-compatible streams surface a clear authentication-failure message on HTTP 401/403 naming the provider and the configured API key source (env var / models.json), without echoing the key, instead of an opaque status-code error.",
       "base": "main",
       "mergeIntoLocal": true,
       "drift": {
