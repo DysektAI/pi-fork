@@ -62,8 +62,14 @@ resolve_manifest() {
 
 read_manifest_field() {
 	# $1 = a jq-like selector implemented in python. Prints one branch per line.
-	python3 - "$MANIFEST" "$1" <<'PY'
+	"$PYTHON_BIN" - "$MANIFEST" "$1" <<'PY'
 import json, sys
+# On Windows the default text-mode stdout translates \n -> \r\n, so each branch
+# name would carry a trailing CR that corrupts the git refs read downstream.
+try:
+    sys.stdout.reconfigure(newline="\n")
+except Exception:
+    pass
 manifest, mode = sys.argv[1], sys.argv[2]
 data = json.load(open(manifest))
 for f in data["features"]:
@@ -126,6 +132,21 @@ say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mxx %s\033[0m\n' "$*" >&2; exit 1; }
 
+# Resolve a Python 3 interpreter. Different platforms expose it under different
+# names (python3 on Linux/macOS, python or the py launcher on Windows), so probe
+# each candidate and confirm it actually reports major version 3.
+detect_python() {
+	local c
+	for c in python3 python py; do
+		if command -v "$c" >/dev/null 2>&1 &&
+			"$c" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
+			printf '%s' "$c"
+			return 0
+		fi
+	done
+	return 1
+}
+
 require_clean_tree() {
 	if [[ -n "$(git status --porcelain)" ]]; then
 		die "Working tree is not clean. Commit or stash changes before syncing."
@@ -174,6 +195,8 @@ fi
 
 require_clean_tree
 
+PYTHON_BIN="$(detect_python)" || die "No Python 3 interpreter found (tried python3, python, py)."
+
 # Resolve the manifest (working tree or feat/fork-tooling) and derive branch lists.
 resolve_manifest
 mapfile -t INDEPENDENT_BRANCHES < <(read_manifest_field independent)
@@ -219,7 +242,7 @@ if [[ "$DO_DRIFT" -eq 1 ]]; then
 		drift_script="$drift_tmp"
 	fi
 	if [[ -n "$drift_script" ]]; then
-		if python3 "$drift_script" --manifest "$MANIFEST"; then
+		if "$PYTHON_BIN" "$drift_script" --manifest "$MANIFEST"; then
 			: # all features ACTIVE
 		else
 			rc=$?
@@ -443,7 +466,7 @@ resolve_theme_token_union() {
 		warn ".fork/resolve-theme-union.py missing; cannot auto-resolve theme.ts."
 		return 1
 	fi
-	python3 .fork/resolve-theme-union.py "$f" || return 1
+	"$PYTHON_BIN" .fork/resolve-theme-union.py "$f" || return 1
 	git add "$f"
 }
 
@@ -483,7 +506,7 @@ for b in "${LOCAL_MERGE_BRANCHES[@]}"; do
 	if git grep -lE '^(<<<<<<<|>>>>>>>)' -- ':!fork-sync.sh' ':!.fork' >/dev/null 2>&1; then
 		warn "Conflict markers detected after merging $b; re-resolving theme union."
 		f="packages/coding-agent/src/modes/interactive/theme/theme.ts"
-		if [[ -f .fork/resolve-theme-union.py ]] && python3 .fork/resolve-theme-union.py "$f"; then
+		if [[ -f .fork/resolve-theme-union.py ]] && "$PYTHON_BIN" .fork/resolve-theme-union.py "$f"; then
 			git add "$f"
 			git commit --no-verify -q --amend --no-edit
 		else
