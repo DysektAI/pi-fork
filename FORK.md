@@ -62,6 +62,14 @@ is always installed before the first feature rebase.
 
 ## Syncing with upstream
 
+GitHub Actions is the normal sync runner. `.github/workflows/fork-sync.yml` runs
+`./fork-sync.sh` every six hours and on manual dispatch, then pushes `main`, the
+feature branches, and `local`. If a conflict cannot be auto-resolved, the action
+fails at the offending branch; resolve it once locally and rerere will replay it
+on future runs.
+
+Manual local fallback:
+
 ```bash
 ./fork-sync.sh             # full sync + rebuild + bounded tests
 ./fork-sync.sh --no-push   # do everything locally, skip pushing to origin
