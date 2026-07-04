@@ -17,6 +17,7 @@
 - Markdown inline code that resolves to an existing file path now renders with the `toolPath` color and a clickable OSC 8 hyperlink, matching clickable tool paths. Relative paths resolve against the session cwd. In the VS Code integrated terminal the link uses the `vscode://file/<path>[:line[:col]]` scheme so it opens in the editor and resolves correctly under Remote-WSL/SSH (a raw `file://` URL is handed to the host OS and fails on remote paths); elsewhere it uses `file://`. Non-path inline code (shell commands, function calls, identifiers) and non-existent paths keep the `mdCode` color.
 - Added a `task-tracker` example extension: in-session to-do / plan tracking via `TaskCreate`/`TaskUpdate`/`TaskList`/`TaskGet`/`update_plan` tools, a `/tasks` view, `.pi/TODO.md` export, and automatic task-state injection so multi-step work stays tracked. Demonstrates building plan-mode/to-dos as an extension rather than in core.
 - Added a `config-center` example extension: a single `/config` command + `SettingsList` UI backed by a process-global registry that other extensions opt into (8-line helper, no shared import), so per-extension settings live in one place instead of scattered commands. Includes a CLI path (`/config <id> <value>`) and fuzzy search.
+- Added an `auto-update` example extension: opt-in automatic `pi update --extensions` on startup (OFF by default; `/auto-update on|off`), with a documented supply-chain caveat for auto-updating third-party extension code.
 
 ### Fixed
 
