@@ -44,7 +44,7 @@ import { printTimings, resetTimings, time } from "./core/timings.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
-import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
+import { getThemeMissingTokenWarning, initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
@@ -776,6 +776,16 @@ export async function main(args: string[], options?: MainOptions) {
 	time("prepareInitialMessage");
 	initTheme(settingsManager.getTheme(), appMode === "interactive");
 	time("initTheme");
+
+	// Surface a non-fatal hint when the active custom theme omits optional color
+	// tokens the app now supports (e.g. thinkingMax, toolPath), so it does not
+	// silently render with fallback colors.
+	if (appMode === "interactive") {
+		const themeWarning = getThemeMissingTokenWarning();
+		if (themeWarning) {
+			console.warn(chalk.yellow(themeWarning));
+		}
+	}
 
 	// Show deprecation warnings in interactive mode
 	if (appMode === "interactive" && deprecationWarnings.length > 0) {
