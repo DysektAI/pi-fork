@@ -57,7 +57,7 @@ export {
 	serializeConversation,
 	shouldCompact,
 } from "./core/compaction/index.ts";
-export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
+export { createEventBus, type EventBus, type EventBusController, type EventBusErrorHandler } from "./core/event-bus.ts";
 // Extension system
 export type {
 	AgentEndEvent,
