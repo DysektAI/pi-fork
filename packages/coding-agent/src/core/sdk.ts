@@ -315,6 +315,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			return streamSimple(model, context, {
 				...options,
 				apiKey: auth.apiKey,
+				apiKeySource: options?.apiKeySource ?? modelRegistry.getApiKeySourceDescription(model.provider),
 				env,
 				timeoutMs,
 				websocketConnectTimeoutMs,

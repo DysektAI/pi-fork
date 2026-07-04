@@ -113,6 +113,13 @@ export interface StreamOptions {
 	signal?: AbortSignal;
 	apiKey?: string;
 	/**
+	 * Human-readable description of where the API key came from (e.g.
+	 * "the environment variable OPENAI_API_KEY" or "the apiKey in models.json").
+	 * Used to make auth failures (HTTP 401/403) actionable by naming the key
+	 * source. Never contains the key value itself.
+	 */
+	apiKeySource?: string;
+	/**
 	 * Preferred transport for providers that support multiple transports.
 	 * Providers that do not support this option ignore it.
 	 */
