@@ -20,6 +20,7 @@
 - Added an `auto-update` example extension: opt-in automatic `pi update --extensions` on startup (OFF by default; `/auto-update on|off`), with a documented supply-chain caveat for auto-updating third-party extension code.
 - Added a `notes-box` example extension: `/note <text>` and `/notes [clear]` backed by a single global inbox file, for capturing ideas without leaving pi or interrupting a run.
 - Added an `auto-title` example extension: names sessions automatically from the whole transcript on a widening cadence (1, 2, 4, 8…) so titles broaden then settle; `/title`, `/titles on|off`, Ctrl+Shift+T, and a `titles` toggle registered into `/config`.
+- Added a `session-recap` example extension: after a quiet period it posts a one-line recap (time taken + what was done + what's next) using the cheapest available model. Toggle and model are registered into `/config` (`recaps`, `recap-model`).
 
 ### Fixed
 
