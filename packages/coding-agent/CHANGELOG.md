@@ -22,6 +22,7 @@
 - Added an `auto-title` example extension: names sessions automatically from the whole transcript on a widening cadence (1, 2, 4, 8…) so titles broaden then settle; `/title`, `/titles on|off`, Ctrl+Shift+T, and a `titles` toggle registered into `/config`.
 - Added a `session-recap` example extension: after a quiet period it posts a one-line recap (time taken + what was done + what's next) using the cheapest available model. Toggle and model are registered into `/config` (`recaps`, `recap-model`).
 - Added a `credential-pool` example extension: API-key rotation + OAuth refresh across provider pools (rotates on 429/401), plus a `secrets` block that resolves non-provider secrets (env/value/file/command) into `process.env` at startup as a single source. Ships `pools.example.json`; real `pools.json` is git-ignored.
+- Added `pi.getExtensions()` to the extension API, returning the extensions loaded in the current session with canonical `name`, `path`, `scope` (`project`/`user`/`package`/`cli`), and `source` metadata. See [Extensions](docs/extensions.md#pigetextensions).
 
 ### Fixed
 
