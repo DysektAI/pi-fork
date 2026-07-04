@@ -12,6 +12,7 @@
 - Fixed DS4 server context overflow detection for `Prompt has ... tokens, but the configured context size is ... tokens` errors ([#6262](https://github.com/earendil-works/pi/issues/6262)).
 - Fixed OpenAI Codex WebSocket sessions to rotate cached connections before the backend's 60-minute limit, avoiding connection-limit failures on long sessions ([#6268](https://github.com/earendil-works/pi/issues/6268)).
 - Fixed retry classification for Cloudflare 524 timeout responses ([#6239](https://github.com/earendil-works/pi/issues/6239)).
+- Fixed OpenAI-compatible streams to surface a clear authentication-failure message on HTTP 401/403, naming the provider and the configured API key source (e.g. the environment variable) without echoing the key value, instead of an opaque status-code error.
 
 ### Added
 
