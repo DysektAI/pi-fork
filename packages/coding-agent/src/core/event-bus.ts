@@ -5,11 +5,13 @@ export interface EventBus {
 	on(channel: string, handler: (data: unknown) => void): () => void;
 }
 
+export type EventBusErrorHandler = (channel: string, error: unknown) => void;
+
 export interface EventBusController extends EventBus {
 	clear(): void;
 }
 
-export function createEventBus(): EventBusController {
+export function createEventBus(onError?: EventBusErrorHandler): EventBusController {
 	const emitter = new EventEmitter();
 	return {
 		emit: (channel, data) => {
@@ -20,7 +22,13 @@ export function createEventBus(): EventBusController {
 				try {
 					await handler(data);
 				} catch (err) {
-					console.error(`Event handler error (${channel}):`, err);
+					if (onError) {
+						onError(channel, err);
+					} else {
+						process.stderr.write(
+							`Event handler error (${channel}): ${err instanceof Error ? err.message : String(err)}\n`,
+						);
+					}
 				}
 			};
 			emitter.on(channel, safeHandler);
