@@ -1,0 +1,70 @@
+name: Fork sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      no_test:
+        description: "Skip build/tests; still rebases and pushes branches"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'DysektAI/pi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: local
+          fetch-depth: 0
+          token: ${{ secrets.FORK_SYNC_TOKEN || github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev fd-find ripgrep
+          sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+
+      - name: Prepare git branches
+        run: |
+          git config user.name "fork-sync[bot]"
+          git config user.email "fork-sync[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/earendil-works/pi.git 2>/dev/null || \
+            git remote set-url upstream https://github.com/earendil-works/pi.git
+
+          git fetch origin --prune '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+          git fetch upstream --prune '+refs/heads/*:refs/remotes/upstream/*' '+refs/tags/*:refs/tags/*'
+
+          git switch --detach
+          while read -r ref; do
+            branch="${ref#origin/}"
+            [[ "$branch" == "HEAD" ]] && continue
+            git branch -f "$branch" "$ref"
+          done < <(git for-each-ref --format='%(refname:short)' refs/remotes/origin)
+          git switch local
+
+      - name: Sync fork
+        run: |
+          args=()
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.no_test }}" == "true" ]]; then
+            args+=(--no-test)
+          fi
+          FORK_SYNC_NPM_CI=1 ./fork-sync.sh "${args[@]}"
