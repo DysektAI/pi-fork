@@ -170,6 +170,36 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
+		it("should return a structural outline with view=outline", async () => {
+			const testFile = join(testDir, "outline.ts");
+			writeFileSync(
+				testFile,
+				["export function alpha() {", "  return 1;", "}", "", "export class Widget {", "  run() {}", "}"].join(
+					"\n",
+				),
+			);
+
+			const result = await readTool.execute("test-call-outline-1", { path: testFile, view: "outline" });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Outline of");
+			expect(output).toContain("export function alpha()");
+			expect(output).toContain("export class Widget");
+			expect(output).toContain("bodies elided");
+			expect(output).not.toContain("return 1;");
+		});
+
+		it("should fall back to a normal read when outline finds no symbols", async () => {
+			const testFile = join(testDir, "plain.txt");
+			writeFileSync(testFile, "just some prose\nwith no code\n");
+
+			const result = await readTool.execute("test-call-outline-2", { path: testFile, view: "outline" });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("just some prose");
+			expect(output).not.toContain("Outline of");
+		});
+
 		it("should include truncation details when truncated", async () => {
 			const testFile = join(testDir, "large-file.txt");
 			const lines = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`);
