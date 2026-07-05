@@ -14,7 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, extname } from "node:path";
 import type {
 	Agent,
 	AgentEvent,
@@ -63,6 +63,7 @@ import {
 	ExtensionRunner,
 	type ExtensionUIContext,
 	type InputSource,
+	type LoadedExtensionInfo,
 	type MessageEndEvent,
 	type MessageStartEvent,
 	type MessageUpdateEvent,
@@ -2194,6 +2195,21 @@ export class AgentSession {
 		return `extension:${name}`;
 	}
 
+	private getLoadedExtensions(): LoadedExtensionInfo[] {
+		return this._resourceLoader.getExtensions().extensions.map((extension) => {
+			const sourceInfo = extension.sourceInfo;
+			let scope: LoadedExtensionInfo["scope"] = sourceInfo.scope === "user" ? "user" : "project";
+			if (sourceInfo.scope === "temporary") scope = "cli";
+			if (sourceInfo.origin === "package") scope = "package";
+			return {
+				name: basename(extension.path, extname(extension.path)),
+				path: extension.path,
+				scope,
+				source: sourceInfo.source,
+			};
+		});
+	}
+
 	private _applyExtensionBindings(runner: ExtensionRunner): void {
 		runner.setUIContext(this._extensionUIContext, this._extensionMode);
 		runner.bindCommandContext(this._extensionCommandContextActions);
@@ -2282,6 +2298,7 @@ export class AgentSession {
 				},
 				getActiveTools: () => this.getActiveToolNames(),
 				getAllTools: () => this.getAllTools(),
+				getExtensions: () => this.getLoadedExtensions(),
 				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
 				refreshTools: () => this._refreshToolRegistry(),
 				getCommands,
