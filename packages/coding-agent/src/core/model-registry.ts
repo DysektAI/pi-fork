@@ -781,6 +781,30 @@ export class ModelRegistry {
 	}
 
 	/**
+	 * Human-readable description of where a provider's API key comes from, for use
+	 * in actionable auth-failure messages. Returns undefined when the source is
+	 * unknown. Never includes the key value itself.
+	 */
+	getApiKeySourceDescription(provider: string): string | undefined {
+		const status = this.getProviderAuthStatus(provider);
+		switch (status.source) {
+			case "environment":
+				return status.label ? `the environment variable ${status.label}` : "an environment variable";
+			case "models_json_key":
+				return "the apiKey configured in models.json";
+			case "models_json_command":
+				return "the apiKey command configured in models.json";
+			case "stored":
+			case "runtime":
+				return "the stored credentials (run '/login' to re-authenticate)";
+			case "fallback":
+				return "a fallback API key";
+			default:
+				return undefined;
+		}
+	}
+
+	/**
 	 * Get display name for a provider.
 	 */
 	getProviderDisplayName(provider: string): string {

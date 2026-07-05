@@ -1578,6 +1578,41 @@ describe("ModelRegistry", () => {
 				}
 			});
 
+			test("api key source description names the env var for actionable auth errors", () => {
+				const envVarName = "TEST_API_KEY_SOURCE_DESC_98765";
+				const originalEnv = process.env[envVarName];
+
+				try {
+					process.env[envVarName] = "status-test-key";
+
+					writeRawModelsJson({
+						"custom-provider": providerWithApiKey(`$${envVarName}`),
+					});
+
+					const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+					expect(registry.getApiKeySourceDescription("custom-provider")).toBe(
+						`the environment variable ${envVarName}`,
+					);
+				} finally {
+					if (originalEnv === undefined) {
+						delete process.env[envVarName];
+					} else {
+						process.env[envVarName] = originalEnv;
+					}
+				}
+			});
+
+			test("api key source description reports a literal models.json key", () => {
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey("literal_api_key_value"),
+				});
+
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+
+				expect(registry.getApiKeySourceDescription("custom-provider")).toBe("the apiKey configured in models.json");
+			});
+
 			test("provider auth status reports interpolated apiKey environment variables", () => {
 				const envVarNameA = "TEST_API_KEY_STATUS_PART_A_98765";
 				const envVarNameB = "TEST_API_KEY_STATUS_PART_B_98765";
