@@ -328,9 +328,21 @@ function resolveThemeColors<T extends Record<string, ColorValue>>(
 // Theme Class
 // ============================================================================
 
+/**
+ * An optional theme token that a loaded theme did not define, along with the
+ * fallback token used in its place. Surfaced at startup as a non-fatal hint so
+ * users can opt into the new color.
+ */
+export interface MissingOptionalToken {
+	token: ThemeColor;
+	fallback: ThemeColor;
+	note: string;
+}
+
 export class Theme {
 	readonly name?: string;
 	readonly sourcePath?: string;
+	readonly missingOptionalTokens: readonly MissingOptionalToken[];
 	sourceInfo?: SourceInfo;
 	private fgColors: Map<ThemeColor, string>;
 	private bgColors: Map<ThemeBg, string>;
@@ -340,11 +352,17 @@ export class Theme {
 		fgColors: Record<ThemeColor, string | number>,
 		bgColors: Record<ThemeBg, string | number>,
 		mode: ColorMode,
-		options: { name?: string; sourcePath?: string; sourceInfo?: SourceInfo } = {},
+		options: {
+			name?: string;
+			sourcePath?: string;
+			sourceInfo?: SourceInfo;
+			missingOptionalTokens?: readonly MissingOptionalToken[];
+		} = {},
 	) {
 		this.name = options.name;
 		this.sourcePath = options.sourcePath;
 		this.sourceInfo = options.sourceInfo;
+		this.missingOptionalTokens = options.missingOptionalTokens ?? [];
 		this.mode = mode;
 		this.fgColors = new Map();
 		for (const [key, value] of Object.entries(fgColors) as [ThemeColor, string | number][]) {
@@ -596,9 +614,37 @@ function loadThemeJson(name: string): ThemeJson {
 	return parseThemeJsonContent(name, content);
 }
 
+// ============================================================================
+// Optional Theme Tokens
+// ============================================================================
+
+/**
+ * Theme color tokens that are optional for backward compatibility: themes
+ * authored before the token was introduced still load, and the token resolves
+ * to a documented fallback. Each entry records the fallback token used and a
+ * short note so the missing-token startup warning is actionable.
+ */
+const OPTIONAL_THEME_TOKENS: ReadonlyArray<{
+	token: ThemeColor;
+	fallback: ThemeColor;
+	note: string;
+}> = [
+	{
+		token: "toolPath",
+		fallback: "accent",
+		note: "file paths in built-in file tool titles",
+	},
+	{
+		token: "thinkingMax",
+		fallback: "thinkingXhigh",
+		note: "the 'max' thinking level border",
+	},
+];
+
 function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {
 	const colorMode = mode ?? (getCapabilities().trueColor ? "truecolor" : "256color");
 	const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
+	const missingOptionalTokens: MissingOptionalToken[] = [];
 	// toolPath is an optional token; fall back to accent so existing themes render unchanged.
 	if (themeJson.colors.toolPath === undefined) {
 		resolvedColors.toolPath = resolvedColors.accent;
@@ -625,9 +671,18 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 	if (fgColors.thinkingMax === undefined) {
 		fgColors.thinkingMax = fgColors.thinkingXhigh;
 	}
+	// Record which optional tokens the theme omitted so startup can surface a
+	// non-fatal hint. `colors` is the authored token set, so a missing key here
+	// means the theme relied on the fallback rather than picking its own color.
+	for (const { token, fallback, note } of OPTIONAL_THEME_TOKENS) {
+		if (themeJson.colors[token] === undefined) {
+			missingOptionalTokens.push({ token, fallback, note });
+		}
+	}
 	return new Theme(fgColors, bgColors, colorMode, {
 		name: themeJson.name,
 		sourcePath,
+		missingOptionalTokens,
 	});
 }
 
@@ -824,6 +879,27 @@ export const theme: Theme = new Proxy({} as Theme, {
 function setGlobalTheme(t: Theme): void {
 	(globalThis as Record<symbol, Theme>)[THEME_KEY] = t;
 	(globalThis as Record<symbol, Theme>)[THEME_KEY_OLD] = t;
+}
+
+/**
+ * Build a non-fatal startup warning when a user-authored theme omits optional
+ * color tokens the app now supports. Built-in themes (no `sourcePath`) always
+ * define every token, so they are skipped. Returns `undefined` when there is
+ * nothing to warn about.
+ */
+export function getThemeMissingTokenWarning(activeTheme: Theme = theme): string | undefined {
+	// Only user-authored themes (loaded from a file) can lag behind new tokens.
+	if (!activeTheme.sourcePath) return undefined;
+	const missing = activeTheme.missingOptionalTokens;
+	if (missing.length === 0) return undefined;
+
+	const label = activeTheme.name ? `"${activeTheme.name}"` : "your custom theme";
+	const lines = missing.map(({ token, fallback, note }) => `  - ${token}: using ${fallback} (controls ${note})`);
+	return (
+		`Theme ${label} is missing optional color tokens:\n${lines.join("\n")}\n` +
+		`Add them to ${activeTheme.sourcePath} to pick your own colors. ` +
+		`See the built-in themes (dark.json, light.json) for reference values.`
+	);
 }
 
 let currentThemeName: string | undefined;
