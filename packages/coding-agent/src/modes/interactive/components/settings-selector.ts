@@ -36,6 +36,7 @@ const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 	medium: "Moderate reasoning (~8k tokens)",
 	high: "Deep reasoning (~16k tokens)",
 	xhigh: "Maximum reasoning (~32k tokens)",
+	max: "Maximum reasoning (native, all output tokens)",
 };
 
 const DEFAULT_PROJECT_TRUST_LABELS: Record<DefaultProjectTrust, string> = {
@@ -182,10 +183,12 @@ class SelectSubmenu extends Container {
 		// Spacer
 		this.addChild(new Spacer(1));
 
-		// Select list
+		// Show every option for short lists (e.g. thinking levels, queue modes) and
+		// only start scrolling for long ones (e.g. themes). 18 keeps short menus fully
+		// visible while still bounding very long lists.
 		this.selectList = new SelectList(
 			options,
-			Math.min(options.length, 10),
+			Math.min(options.length, 18),
 			getSelectListTheme(),
 			SETTINGS_SUBMENU_SELECT_LIST_LAYOUT,
 		);
