@@ -136,32 +136,49 @@ describe("markdown inline-code path linkify", () => {
 	});
 
 	describe("VS Code integrated terminal", () => {
+		let savedWslDistro: string | undefined;
 		beforeEach(() => {
 			process.env.TERM_PROGRAM = "vscode";
+			savedWslDistro = process.env.WSL_DISTRO_NAME;
+			delete process.env.WSL_DISTRO_NAME;
 		});
 
-		it("emits a vscode://file link instead of file:// so Remote-WSL paths resolve", () => {
+		afterEach(() => {
+			if (savedWslDistro === undefined) {
+				delete process.env.WSL_DISTRO_NAME;
+			} else {
+				process.env.WSL_DISTRO_NAME = savedWslDistro;
+			}
+		});
+
+		it("styles the path but omits OSC 8 so VS Code's native link detector opens it in-window", () => {
 			const filePath = writeFile("vscode.txt");
 			const out = getMarkdownTheme(tempRoot).code(filePath);
 
 			expect(out).toContain(TOOL_PATH_ANSI);
-			expect(out).toContain(OSC8_PREFIX);
-			expect(out).toContain(`vscode://file${filePath}`);
+			expect(out).toContain(filePath);
+			expect(out).not.toContain(OSC8_PREFIX);
+			expect(out).not.toContain("vscode://");
 			expect(out).not.toContain(pathToFileURL(filePath).href);
 		});
 
-		it("maps a :line:col suffix into the vscode://file locator", () => {
+		it("keeps a :line:col suffix as plain text for VS Code to parse", () => {
 			const filePath = writeFile("withlinecol.ts");
 			const out = getMarkdownTheme(tempRoot).code(`${filePath}:42:7`);
 
-			expect(out).toContain(`vscode://file${filePath}:42:7`);
+			expect(out).toContain(`${filePath}:42:7`);
+			expect(out).not.toContain(OSC8_PREFIX);
 		});
 
-		it("maps a bare :line suffix into the vscode://file locator", () => {
-			const filePath = writeFile("withline-only.ts");
-			const out = getMarkdownTheme(tempRoot).code(`${filePath}:42`);
+		it("omits OSC 8 under Remote-WSL too", () => {
+			process.env.WSL_DISTRO_NAME = "Ubuntu-24.04";
+			const filePath = writeFile("wsl.txt");
+			const out = getMarkdownTheme(tempRoot).code(filePath);
 
-			expect(out).toContain(`vscode://file${filePath}:42`);
+			expect(out).toContain(TOOL_PATH_ANSI);
+			expect(out).toContain(filePath);
+			expect(out).not.toContain(OSC8_PREFIX);
+			expect(out).not.toContain("vscode://");
 		});
 	});
 });
