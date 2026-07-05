@@ -202,8 +202,17 @@ function formatBashCall(args: { command?: string; timeout?: number } | undefined
 	const command = str(args?.command);
 	const timeout = args?.timeout as number | undefined;
 	const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
-	const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
-	return theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
+	// Collapse multi-line commands (heredocs, `node -e` scripts, &&-chains split
+	// across lines) into a single title line. The raw command stays intact in the
+	// tool args and output; the title is only a label, and embedded newlines
+	// would otherwise render as a full-width padded block per source line.
+	const singleLineCommand = command ? command.replace(/\s+/g, " ").trim() : command;
+	const commandDisplay =
+		command === null ? invalidArgText(theme) : singleLineCommand ? singleLineCommand : theme.fg("toolOutput", "...");
+	// Header on its own line, then the command beneath it, so it reads as a
+	// labeled tool call rather than "bash" running inline with the command.
+	const header = theme.fg("toolTitle", theme.bold("[Bash Tool]")) + timeoutSuffix;
+	return `${header}\n${theme.fg("toolTitle", `$ ${commandDisplay}`)}`;
 }
 
 function rebuildBashResultRenderComponent(

@@ -81,7 +81,10 @@ function formatReadLineRange(args: ReadRenderArgs | undefined, theme: Theme): st
 function formatReadCall(args: ReadRenderArgs | undefined, theme: Theme, cwd: string): string {
 	const pathDisplay = renderToolPath(str(args?.file_path ?? args?.path), theme, cwd);
 	const outline = args?.view === "outline" ? theme.fg("dim", " (outline)") : "";
-	return `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}${formatReadLineRange(args, theme)}${outline}`;
+	// Header on its own line, then the path beneath, matching the bash tool layout
+	// so the call reads as a labeled tool invocation rather than "read" inline.
+	const header = theme.fg("toolTitle", theme.bold("[Read Tool]"));
+	return `${header}\n${theme.fg("toolTitle", pathDisplay)}${formatReadLineRange(args, theme)}${outline}`;
 }
 
 function trimTrailingEmptyLines(lines: string[]): string[] {
