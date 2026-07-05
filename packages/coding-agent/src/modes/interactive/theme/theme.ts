@@ -91,6 +91,8 @@ const ThemeJsonSchema = Type.Object({
 		thinkingMax: Type.Optional(ColorValueSchema),
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
+		// Tool path color (optional; falls back to accent when omitted)
+		toolPath: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -150,8 +152,9 @@ export type ThemeColor =
 	| "thinkingMedium"
 	| "thinkingHigh"
 	| "thinkingXhigh"
-	| "thinkingMax"
-	| "bashMode";
+	| "bashMode"
+	| "toolPath"
+	| "thinkingMax";
 
 export type ThemeBg =
 	| "selectedBg"
@@ -593,6 +596,10 @@ function loadThemeJson(name: string): ThemeJson {
 function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {
 	const colorMode = mode ?? (getCapabilities().trueColor ? "truecolor" : "256color");
 	const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
+	// toolPath is an optional token; fall back to accent so existing themes render unchanged.
+	if (themeJson.colors.toolPath === undefined) {
+		resolvedColors.toolPath = resolvedColors.accent;
+	}
 	const fgColors: Record<ThemeColor, string | number> = {} as Record<ThemeColor, string | number>;
 	const bgColors: Record<ThemeBg, string | number> = {} as Record<ThemeBg, string | number>;
 	const bgColorKeys: Set<string> = new Set([
