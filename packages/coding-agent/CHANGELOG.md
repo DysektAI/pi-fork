@@ -19,6 +19,7 @@
 - Added a `config-center` example extension: a single `/config` command + `SettingsList` UI backed by a process-global registry that other extensions opt into (8-line helper, no shared import), so per-extension settings live in one place instead of scattered commands. Includes a CLI path (`/config <id> <value>`) and fuzzy search.
 - Added an `auto-update` example extension: opt-in automatic `pi update --extensions` on startup (OFF by default; `/auto-update on|off`), with a documented supply-chain caveat for auto-updating third-party extension code.
 - Added a `notes-box` example extension: `/note <text>` and `/notes [clear]` backed by a single global inbox file, for capturing ideas without leaving pi or interrupting a run.
+- Added an `auto-title` example extension: names sessions automatically from the whole transcript on a widening cadence (1, 2, 4, 8…) so titles broaden then settle; `/title`, `/titles on|off`, Ctrl+Shift+T, and a `titles` toggle registered into `/config`.
 
 ### Fixed
 
