@@ -846,6 +846,53 @@ more text`,
 		});
 	});
 
+	describe("Code block border styles", () => {
+		const source = "```python\nx = 1\n```";
+
+		const renderPlain = (theme: typeof defaultMarkdownTheme): string[] => {
+			const markdown = new Markdown(source, 0, 0, theme);
+			return markdown
+				.render(80)
+				.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd())
+				.filter((line) => line !== "");
+		};
+
+		it("defaults to fence markers", () => {
+			assert.deepStrictEqual(renderPlain(defaultMarkdownTheme), ["```python", "  x = 1", "```"]);
+		});
+
+		it("renders only the body for style 'none'", () => {
+			const lines = renderPlain({ ...defaultMarkdownTheme, codeBlockBorderStyle: "none" });
+			assert.deepStrictEqual(lines, ["  x = 1"]);
+		});
+
+		it("renders a language header for style 'label'", () => {
+			const lines = renderPlain({ ...defaultMarkdownTheme, codeBlockBorderStyle: "label" });
+			assert.deepStrictEqual(lines, ["python", "  x = 1"]);
+		});
+
+		it("omits the header for style 'label' when no language is set", () => {
+			const markdown = new Markdown("```\nx = 1\n```", 0, 0, {
+				...defaultMarkdownTheme,
+				codeBlockBorderStyle: "label",
+			});
+			const lines = markdown
+				.render(80)
+				.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd())
+				.filter((line) => line !== "");
+			assert.deepStrictEqual(lines, ["  x = 1"]);
+		});
+
+		it("frames the body with rules for style 'rule'", () => {
+			const lines = renderPlain({ ...defaultMarkdownTheme, codeBlockBorderStyle: "rule" });
+			assert.strictEqual(lines.length, 3);
+			assert.ok(lines[0].startsWith("─") && lines[0].includes("python"));
+			assert.strictEqual(lines[1], "  x = 1");
+			assert.ok(/^─+$/.test(lines[2]));
+			assert.ok(!lines[2].includes("python"));
+		});
+	});
+
 	describe("Spacing after dividers", () => {
 		it("should have only one blank line between divider and following paragraph", () => {
 			const markdown = new Markdown(

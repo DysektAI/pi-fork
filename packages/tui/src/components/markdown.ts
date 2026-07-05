@@ -72,6 +72,15 @@ export interface DefaultTextStyle {
 }
 
 /**
+ * How fenced code blocks are framed when rendered.
+ * - "fence": literal ```lang ... ``` markers (default)
+ * - "rule": horizontal rules with an optional language label
+ * - "label": a dim language label header with no closing border
+ * - "none": no border; code is delimited by indentation alone
+ */
+export type CodeBlockBorderStyle = "fence" | "rule" | "label" | "none";
+
+/**
  * Theme functions for markdown elements.
  * Each function takes text and returns styled text with ANSI codes.
  */
@@ -93,6 +102,8 @@ export interface MarkdownTheme {
 	highlightCode?: (code: string, lang?: string) => string[];
 	/** Prefix applied to each rendered code block line (default: "  ") */
 	codeBlockIndent?: string;
+	/** How fenced code blocks are framed (default: "fence") */
+	codeBlockBorderStyle?: CodeBlockBorderStyle;
 }
 
 export interface MarkdownOptions {
@@ -377,20 +388,45 @@ export class Markdown implements Component {
 
 			case "code": {
 				const indent = this.theme.codeBlockIndent ?? "  ";
-				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
+				const borderStyle = this.theme.codeBlockBorderStyle ?? "fence";
+				const lang = token.lang || "";
+
+				const bodyLines: string[] = [];
 				if (this.theme.highlightCode) {
-					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
-					for (const hlLine of highlightedLines) {
-						lines.push(`${indent}${hlLine}`);
+					for (const hlLine of this.theme.highlightCode(token.text, token.lang)) {
+						bodyLines.push(`${indent}${hlLine}`);
 					}
 				} else {
-					// Split code by newlines and style each line
-					const codeLines = token.text.split("\n");
-					for (const codeLine of codeLines) {
-						lines.push(`${indent}${this.theme.codeBlock(codeLine)}`);
+					for (const codeLine of token.text.split("\n")) {
+						bodyLines.push(`${indent}${this.theme.codeBlock(codeLine)}`);
 					}
 				}
-				lines.push(this.theme.codeBlockBorder("```"));
+
+				switch (borderStyle) {
+					case "none":
+						lines.push(...bodyLines);
+						break;
+					case "label":
+						if (lang) {
+							lines.push(this.theme.codeBlockBorder(lang));
+						}
+						lines.push(...bodyLines);
+						break;
+					case "rule": {
+						const rule = "─".repeat(Math.min(width, 80));
+						const header = lang
+							? `─ ${lang} ${"─".repeat(Math.max(0, Math.min(width, 80) - lang.length - 3))}`
+							: rule;
+						lines.push(this.theme.codeBlockBorder(header));
+						lines.push(...bodyLines);
+						lines.push(this.theme.codeBlockBorder(rule));
+						break;
+					}
+					default:
+						lines.push(this.theme.codeBlockBorder(`\`\`\`${lang}`));
+						lines.push(...bodyLines);
+						lines.push(this.theme.codeBlockBorder("```"));
+				}
 				if (nextTokenType && nextTokenType !== "space") {
 					lines.push(""); // Add spacing after code blocks (unless space token follows)
 				}

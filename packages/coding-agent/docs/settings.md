@@ -225,6 +225,7 @@ When multiple sources specify a session directory, precedence is `--session-dir`
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `markdown.codeBlockIndent` | string | `"  "` | Indentation for code blocks |
+| `markdown.codeBlockBorderStyle` | string | `"fence"` | How code blocks are framed: `"fence"` (```lang ... ```), `"rule"` (horizontal rules with language label), `"label"` (language header only), or `"none"` (indent only) |
 
 ### Resources
 
