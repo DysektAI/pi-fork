@@ -507,30 +507,50 @@ if [[ "${#stale_branches[@]}" -gt 0 ]]; then
 fi
 echo "  all ${#MANIFEST_ALL_BRANCHES[@]} feature branches contain main"
 
-say "Rebuilding local integration branch"
-git switch -C local main -q
-for b in "${LOCAL_MERGE_BRANCHES[@]}"; do
-	echo "--- merging $b ---"
-	if ! git merge --no-ff "$b" -m "merge: integrate $b into local"; then
-		if resolve_theme_token_union; then
-			git commit --no-verify -q --no-edit || \
-				die "Merge resolution staged but commit failed integrating $b."
-		else
-			die "Merge conflict integrating $b into local. Resolve manually."
+# local needs rebuilding only when something it integrates actually moved:
+# main (upstream advanced) or any merged feature tip. Ancestry-based like
+# needs_rebuild above, so it is resume-safe (reads the real commit graph, not a
+# per-run snapshot). If local is missing entirely, merge-base fails and we
+# correctly rebuild. When everything is already contained, rebuilding would
+# only mint identical-content merge commits with new SHAs and force-push churn.
+needs_local_rebuild() {
+	git merge-base --is-ancestor main local 2>/dev/null || return 0  # main moved
+	local b
+	for b in "${LOCAL_MERGE_BRANCHES[@]}"; do
+		git merge-base --is-ancestor "$b" local 2>/dev/null || return 0  # feature moved
+	done
+	return 1  # local already contains main + every feature tip
+}
+
+if needs_local_rebuild; then
+	say "Rebuilding local integration branch"
+	git switch -C local main -q
+	for b in "${LOCAL_MERGE_BRANCHES[@]}"; do
+		echo "--- merging $b ---"
+		if ! git merge --no-ff "$b" -m "merge: integrate $b into local"; then
+			if resolve_theme_token_union; then
+				git commit --no-verify -q --no-edit || \
+					die "Merge resolution staged but commit failed integrating $b."
+			else
+				die "Merge conflict integrating $b into local. Resolve manually."
+			fi
 		fi
-	fi
-	# Guard against rerere autoupdate committing a bad (marker-laden) resolution.
-	if git grep -lE '^(<<<<<<<|>>>>>>>)' -- ':!fork-sync.sh' ':!.fork' >/dev/null 2>&1; then
-		warn "Conflict markers detected after merging $b; re-resolving theme union."
-		f="packages/coding-agent/src/modes/interactive/theme/theme.ts"
-		if [[ -f .fork/resolve-theme-union.py ]] && "$PYTHON_BIN" .fork/resolve-theme-union.py "$f"; then
-			git add "$f"
-			git commit --no-verify -q --amend --no-edit
-		else
-			die "Stray conflict markers after merging $b; resolve manually."
+		# Guard against rerere autoupdate committing a bad (marker-laden) resolution.
+		if git grep -lE '^(<<<<<<<|>>>>>>>)' -- ':!fork-sync.sh' ':!.fork' >/dev/null 2>&1; then
+			warn "Conflict markers detected after merging $b; re-resolving theme union."
+			f="packages/coding-agent/src/modes/interactive/theme/theme.ts"
+			if [[ -f .fork/resolve-theme-union.py ]] && "$PYTHON_BIN" .fork/resolve-theme-union.py "$f"; then
+				git add "$f"
+				git commit --no-verify -q --amend --no-edit
+			else
+				die "Stray conflict markers after merging $b; resolve manually."
+			fi
 		fi
-	fi
-done
+	done
+else
+	say "local is up to date (main + all features unchanged); skipping rebuild"
+	git switch local -q
+fi
 
 if [[ "$DO_TEST" -eq 1 ]]; then
 	if [[ "${FORK_SYNC_NPM_CI:-0}" -eq 1 ]]; then
