@@ -510,10 +510,10 @@ echo "  all ${#MANIFEST_ALL_BRANCHES[@]} feature branches contain main"
 # local needs rebuilding only when something it integrates actually moved:
 # main (upstream advanced) or any merged feature tip. Ancestry-based like
 # needs_rebuild above, so it is resume-safe (reads the real commit graph, not a
-# per-run snapshot). If local is missing entirely, merge-base fails and we
-# correctly rebuild. When everything is already contained, rebuilding would
+# per-run snapshot). When everything is already contained, rebuilding would
 # only mint identical-content merge commits with new SHAs and force-push churn.
 needs_local_rebuild() {
+	git rev-parse --verify -q local >/dev/null || return 0  # no local yet
 	git merge-base --is-ancestor main local 2>/dev/null || return 0  # main moved
 	local b
 	for b in "${LOCAL_MERGE_BRANCHES[@]}"; do
