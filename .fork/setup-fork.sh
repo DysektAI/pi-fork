@@ -26,9 +26,20 @@ cd "$TOPLEVEL"
 say() { printf '\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
 
-for PYTHON_BIN in python3 python py; do
-	command -v "$PYTHON_BIN" >/dev/null 2>&1 && "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1 && break
-done
+# Resolve a Python 3 interpreter (python3 on Linux/macOS, python or the py
+# launcher on Windows). Confirm the candidate actually reports major version 3.
+detect_python() {
+	local c
+	for c in python3 python py; do
+		if command -v "$c" >/dev/null 2>&1 &&
+			"$c" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
+			printf '%s' "$c"
+			return 0
+		fi
+	done
+	return 1
+}
+PYTHON_BIN="$(detect_python || true)"
 
 ATTR_LINE='**/CHANGELOG.md merge=fork-changelog'
 ATTR_FILE="${GIT_DIR}/info/attributes"
@@ -50,7 +61,7 @@ fi
 
 say "Registering fork CHANGELOG merge driver (local repo config)"
 git config merge.fork-changelog.name "fork CHANGELOG union"
-git config merge.fork-changelog.driver "${PYTHON_BIN} '${DRIVER_DST}' %O %A %B %A %P"
+git config merge.fork-changelog.driver "${PYTHON_BIN:-python3} '${DRIVER_DST}' %O %A %B %A %P"
 
 say "Mapping CHANGELOG.md to the driver (.git/info/attributes, untracked)"
 mkdir -p "${GIT_DIR}/info"
@@ -72,10 +83,17 @@ RR_SRC=""
 RR_TMP=""
 if [[ -d "${TOPLEVEL}/.fork/rr-cache" ]]; then
 	RR_SRC="${TOPLEVEL}/.fork/rr-cache"
-elif git cat-file -t feat/fork-tooling:.fork/rr-cache >/dev/null 2>&1; then
-	RR_TMP="$(mktemp -d)"
-	git archive feat/fork-tooling .fork/rr-cache 2>/dev/null | tar -x -C "$RR_TMP" 2>/dev/null
-	RR_SRC="${RR_TMP}/.fork/rr-cache"
+else
+	# A fresh clone has no local feat/fork-tooling branch, only the remote-tracking
+	# ref, so try both before giving up.
+	for RR_REF in feat/fork-tooling origin/feat/fork-tooling; do
+		if git cat-file -t "${RR_REF}:.fork/rr-cache" >/dev/null 2>&1; then
+			RR_TMP="$(mktemp -d)"
+			git archive "$RR_REF" .fork/rr-cache 2>/dev/null | tar -x -C "$RR_TMP" 2>/dev/null
+			RR_SRC="${RR_TMP}/.fork/rr-cache"
+			break
+		fi
+	done
 fi
 if [[ -n "$RR_SRC" && -d "$RR_SRC" ]]; then
 	count=0
@@ -93,8 +111,8 @@ if [[ -n "$RR_SRC" && -d "$RR_SRC" ]]; then
 fi
 [[ -n "$RR_TMP" ]] && rm -rf "$RR_TMP"
 
-if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info[0] != 3)' >/dev/null 2>&1; then
-	printf '\033[1;33m!! Python 3 not found on PATH; the CHANGELOG merge driver needs it.\033[0m\n'
+if [[ -z "$PYTHON_BIN" ]]; then
+	printf '\033[1;33m!! No Python 3 found on PATH (tried python3, python, py); the CHANGELOG merge driver needs it.\033[0m\n'
 fi
 
 say "Done. Fork git config installed."

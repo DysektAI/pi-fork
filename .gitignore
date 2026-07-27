@@ -39,6 +39,8 @@ out.html
 packages/coding-agent/binaries/
 todo.md
 plans/
+# Canonical copy lives on feat/fork-tooling; setup-fork.sh restores it from there.
+.fork/rr-cache/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
