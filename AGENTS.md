@@ -23,6 +23,17 @@ This repository has one authoritative downstream release model. Do not reopen or
 
 See [FORK.md](FORK.md) for the operational guide.
 
+## Upstream Contributions
+
+Fork patches that belong upstream are proposed, not merged locally and forgotten. The rules below are settled; do not relitigate them per branch:
+
+- Branch from `main` (the upstream mirror), never from `local`. `local` trails `upstream/main`, so branching from it silently reverts upstream commits in every file you touch. Verify with `git rev-list --count $(git merge-base main <branch>)..main`, which must be `0`.
+- An upstream-facing branch carries **no** `CHANGELOG.md` edit. Upstream's `CONTRIBUTING.md` reserves changelog entries for maintainers. The fork's changelog rules below apply only to commits destined for `local`.
+- Keep one focused commit per proposal where practical, and run `npm run check` plus the affected tests before pushing.
+- Draft the proposal as an issue on `DysektAI/pi-fork` first, using the upstream issue template shape. Rewrite it in your own voice before moving it upstream: upstream auto-closes new-contributor issues, requires "your own voice" prose, caps issues at one screen, and blocks accounts that submit agent-generated slop.
+- Do not open an upstream PR until a maintainer replies `lgtm` in the documented command position. `lgtmi` clears issues only.
+- `.fork/rr-cache` is tracked only on `feat/fork-tooling`; `setup-fork.sh` restores it from `feat/fork-tooling` or `origin/feat/fork-tooling`. Never re-add it to `local`.
+
 ## Code Quality
 
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
