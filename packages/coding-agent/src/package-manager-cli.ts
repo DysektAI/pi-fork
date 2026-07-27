@@ -527,14 +527,24 @@ async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
 			});
 			child.on("close", (code, signal) => {
 				if (code === 0) {
+					// Print captured stderr warnings even on success so Git
+					// diagnostics are not silently lost.
+					if (stderrData.trim()) {
+						console.warn(chalk.dim(stderrData.trim()));
+					}
 					resolve();
 				} else if (signal) {
 					reject(new Error(`${step.display} terminated by signal ${signal}`));
 				} else if (step.allowFailure) {
-					// Print unexpected stderr (not the expected no-op message)
-					// so real Git failures stay actionable.
-					if (stderrData.trim() && !stderrData.includes("already exists")) {
-						console.warn(chalk.dim(stderrData.trim()));
+					// Filter out only the expected "already exists" no-op
+					// line; print any remaining unexpected stderr so real
+					// Git failures stay actionable.
+					const unexpected = stderrData
+						.split("\n")
+						.filter((line) => line.trim() && !line.includes("already exists"))
+						.join("\n");
+					if (unexpected.trim()) {
+						console.warn(chalk.dim(unexpected.trim()));
 					}
 					resolve();
 				} else {
