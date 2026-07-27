@@ -201,11 +201,17 @@ describe("detectInstallMethod", () => {
 		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
 
 		expect(detectInstallMethod()).toBe("source");
-		expect(command?.steps?.filter(s => s.command !== "sh").slice(0, 3)).toEqual([
+		expect(command?.steps?.slice(0, 4)).toEqual([
 			{
 				command: "git",
 				args: ["-C", root, "fetch", "origin", "local:refs/remotes/origin/local"],
 				display: `git -C ${root} fetch origin local:refs/remotes/origin/local`,
+			},
+			{
+				command: "git",
+				args: ["-C", root, "branch", "--track", "local", "origin/local"],
+				display: `git -C ${root} branch --track local origin/local`,
+				allowFailure: true,
 			},
 			{
 				command: "git",

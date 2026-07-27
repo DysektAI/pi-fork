@@ -67,7 +67,7 @@ GitHub releases include a versioned source archive covered by the release's `SHA
 
 ```bash
 VERSION="<release-version>"
-grep -F -- "  pi-${VERSION}-source.tar.gz" SHA256SUMS | grep -q . && sha256sum --check --strict <(grep -F -- "  pi-${VERSION}-source.tar.gz" SHA256SUMS) && \
+grep -xF -- "  pi-${VERSION}-source.tar.gz" SHA256SUMS | sha256sum --check --strict && \
   tar -xzf "pi-${VERSION}-source.tar.gz"
 cd "pi-${VERSION}"
 ./scripts/build-binaries.sh --offline-model-data --platform linux-x64 --out "$PWD/out"

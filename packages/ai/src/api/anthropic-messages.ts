@@ -74,8 +74,6 @@ function getCacheControl(
 
 // Stealth mode: Mimic Claude Code's tool naming exactly
 const claudeCodeVersion = "2.1.75";
-// AgentRouter WAF validates the exact User-Agent string; must match upstream Claude Code.
-const agentRouterUserAgent = "claude-cli/2.1.158 (external, sdk-cli)";
 
 // Claude Code 2.x tool names (canonical casing)
 // Source: https://cchistory.mariozechner.at/data/prompts-2.1.11.md
@@ -858,37 +856,6 @@ function createClient(
 	}
 	if (needsInterleavedBeta) {
 		betaFeatures.push(INTERLEAVED_THINKING_BETA);
-	}
-
-	// AgentRouter: API key auth with the full Claude Code wire image required by its WAF.
-	// The upstream allowslist only specific AI coding clients (Claude Code, Codex, etc.);
-	// generic Anthropic SDK traffic is rejected with "unauthorized client detected".
-	if (model.provider === "agentrouter") {
-		const client = new Anthropic({
-			apiKey: apiKey ?? null,
-			authToken: null,
-			baseURL: model.baseUrl,
-			dangerouslyAllowBrowser: true,
-			defaultHeaders: mergeHeaders(
-				{
-					accept: "application/json",
-					"anthropic-dangerous-direct-browser-access": "true",
-					"anthropic-beta": [
-						"claude-code-20250219",
-						"interleaved-thinking-2025-05-14",
-						"effort-2025-11-24",
-						"redact-thinking-2026-02-12",
-						...betaFeatures,
-					].join(","),
-					"user-agent": agentRouterUserAgent,
-					"x-app": "cli",
-				},
-				model.headers,
-				optionsHeaders,
-			),
-		});
-
-		return { client, isOAuthToken: false };
 	}
 
 	// Copilot: Bearer auth, selective betas.

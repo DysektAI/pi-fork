@@ -61,7 +61,8 @@ restore_checkout() {
 		git restore --source="$INITIAL_HEAD" --staged --worktree -- . >/dev/null 2>&1 || true
 		# Clean untracked build artifacts from the failed validation.
 		# The script verified a clean non-ignored tree before starting;
-		# any new untracked files were created by the build/check phase.
+		# any new untracked files were created by the build/check phase,
+		# though untracked files created concurrently after that check are also removed.
 		git clean -fd -- . >/dev/null 2>&1 || true
 	fi
 }

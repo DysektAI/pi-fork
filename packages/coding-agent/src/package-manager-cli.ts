@@ -518,6 +518,8 @@ async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
 			child.on("close", (code, signal) => {
 				if (code === 0) {
 					resolve();
+				} else if (step.allowFailure) {
+					resolve();
 				} else if (signal) {
 					reject(new Error(`${step.display} terminated by signal ${signal}`));
 				} else {

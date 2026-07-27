@@ -32,6 +32,9 @@ interface SelfUpdateCommandStep {
 	command: string;
 	args: string[];
 	display: string;
+	/** When true, a non-zero exit code is treated as success. Used for
+	 * idempotent steps where failure is expected on the no-op path. */
+	allowFailure?: boolean;
 }
 
 export interface SelfUpdateCommand extends SelfUpdateCommandStep {
@@ -62,11 +65,16 @@ function makeSelfUpdateCommand(
 	};
 }
 
-function makeSelfUpdateCommandStep(command: string, args: string[]): SelfUpdateCommandStep {
+function makeSelfUpdateCommandStep(
+	command: string,
+	args: string[],
+	options: { allowFailure?: boolean } = {},
+): SelfUpdateCommandStep {
 	return {
 		command,
 		args,
 		display: [command, ...args].map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)).join(" "),
+		allowFailure: options.allowFailure,
 	};
 }
 
@@ -225,13 +233,14 @@ function getSelfUpdateCommandForMethod(
 				"local:refs/remotes/origin/local",
 			]);
 			// Create local tracking origin/local when absent (restricted-refspec
-			// clones). The shell wrapper always exits 0 so an existing branch
-			// does not block the update. The subsequent merge --ff-only is the
-			// safety check that prevents discarding local-only commits.
-			const ensureBranch = makeSelfUpdateCommandStep("sh", [
-				"-c",
-				`git -C '${repoRoot.replaceAll("'", "'\\''")}' branch --track local origin/local 2>/dev/null; exit 0`,
-			]);
+			// clones). Fails harmlessly if local already exists; the subsequent
+			// merge --ff-only is the safety check that prevents discarding
+			// local-only commits.
+			const ensureBranch = makeSelfUpdateCommandStep(
+				"git",
+				["-C", repoRoot, "branch", "--track", "local", "origin/local"],
+				{ allowFailure: true },
+			);
 			const switchBranch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "switch", "local"]);
 			const update = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "merge", "--ff-only", "origin/local"]);
 			const install = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "ci", "--ignore-scripts"]);
