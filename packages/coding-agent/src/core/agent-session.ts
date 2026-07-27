@@ -14,7 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, extname } from "node:path";
 import type {
 	Agent,
 	AgentEvent,
@@ -73,6 +73,7 @@ import {
 	ExtensionRunner,
 	type ExtensionUIContext,
 	type InputSource,
+	type LoadedExtensionInfo,
 	type MessageEndEvent,
 	type MessageStartEvent,
 	type MessageUpdateEvent,
@@ -2304,6 +2305,13 @@ export class AgentSession {
 		return `extension:${name}`;
 	}
 
+	private getLoadedExtensions(): LoadedExtensionInfo[] {
+		return this._resourceLoader.getExtensions().extensions.map((extension) => ({
+			name: basename(extension.path, extname(extension.path)),
+			sourceInfo: extension.sourceInfo,
+		}));
+	}
+
 	private _applyExtensionBindings(runner: ExtensionRunner): void {
 		runner.setUIContext(this._extensionUIContext, this._extensionMode);
 		runner.bindCommandContext(this._extensionCommandContextActions);
@@ -2392,6 +2400,7 @@ export class AgentSession {
 				},
 				getActiveTools: () => this.getActiveToolNames(),
 				getAllTools: () => this.getAllTools(),
+				getExtensions: () => this.getLoadedExtensions(),
 				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
 				refreshTools: () => this._refreshToolRegistry(),
 				getCommands,

@@ -1556,6 +1556,35 @@ Use `sourceInfo` as the canonical provenance field. Do not infer ownership from 
 Built-in interactive commands (like `/model` and `/settings`) are not included here. They are handled only in interactive
 mode and would not execute if sent via `prompt`.
 
+### pi.getExtensions()
+
+Get the extensions loaded in the current session, with canonical provenance metadata.
+
+```typescript
+const extensions = pi.getExtensions();
+const userExtensions = extensions.filter((extension) => extension.sourceInfo.scope === "user");
+const packageExtensions = extensions.filter((extension) => extension.sourceInfo.origin === "package");
+```
+
+Each entry has this shape:
+
+```typescript
+{
+  name: string; // Extension file basename without extension, e.g. "startup" for "startup.ts"
+  sourceInfo: {
+    path: string;
+    source: string;
+    scope: "user" | "project" | "temporary";
+    origin: "package" | "top-level";
+    baseDir?: string;
+  };
+}
+```
+
+As with `pi.getCommands()`, use `sourceInfo` as the canonical provenance field. `scope` and `origin` are
+independent: a package extension keeps the `user` or `project` scope that installed it, so check `origin`
+rather than expecting a distinct scope value for packages.
+
 ### pi.registerMessageRenderer(customType, renderer)
 
 Register a custom TUI renderer for custom messages with your `customType`. Custom messages are created with `pi.sendMessage()` and participate in LLM context. See [Custom UI](#custom-ui).
