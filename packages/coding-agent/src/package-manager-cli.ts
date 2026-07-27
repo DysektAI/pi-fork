@@ -509,9 +509,19 @@ async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
 	console.log(chalk.dim(`Updating ${APP_NAME} with ${command.display}...`));
 	for (const step of command.steps ?? [command]) {
 		await new Promise<void>((resolve, reject) => {
+			// For allowFailure steps, capture stderr so expected no-op
+			// diagnostics (e.g. "branch already exists") can be filtered
+			// while unexpected errors remain visible.
+			const captureStderr = step.allowFailure === true;
 			const child = spawnProcess(step.command, step.args, {
-				stdio: step.suppressStderr ? ["inherit", "inherit", "ignore"] : "inherit",
+				stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit",
 			});
+			let stderrData = "";
+			if (captureStderr && child.stderr) {
+				child.stderr.on("data", (data: Buffer) => {
+					stderrData += data.toString();
+				});
+			}
 			child.on("error", (error) => {
 				reject(error);
 			});
@@ -521,6 +531,11 @@ async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
 				} else if (signal) {
 					reject(new Error(`${step.display} terminated by signal ${signal}`));
 				} else if (step.allowFailure) {
+					// Print unexpected stderr (not the expected no-op message)
+					// so real Git failures stay actionable.
+					if (stderrData.trim() && !stderrData.includes("already exists")) {
+						console.warn(chalk.dim(stderrData.trim()));
+					}
 					resolve();
 				} else {
 					reject(new Error(`${step.display} exited with code ${code ?? "unknown"}`));

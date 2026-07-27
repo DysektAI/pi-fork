@@ -212,7 +212,6 @@ describe("detectInstallMethod", () => {
 				args: ["-C", root, "branch", "--track", "local", "origin/local"],
 				display: `git -C ${root} branch --track local origin/local`,
 				allowFailure: true,
-				suppressStderr: true,
 			},
 			{
 				command: "git",

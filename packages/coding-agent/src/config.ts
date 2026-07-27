@@ -34,11 +34,10 @@ interface SelfUpdateCommandStep {
 	display: string;
 	/** When true, a non-zero exit code is treated as success. Used for
 	 * idempotent steps where failure is expected on the no-op path.
-	 * Signal termination always propagates as an error regardless. */
+	 * Signal termination always propagates as an error regardless.
+	 * Stderr is captured (not inherited) so that expected no-op
+	 * diagnostics can be filtered; unexpected errors are still printed. */
 	allowFailure?: boolean;
-	/** When true, stderr is discarded instead of inherited. Used for
-	 * steps whose expected-failure path prints noisy diagnostics. */
-	suppressStderr?: boolean;
 }
 
 export interface SelfUpdateCommand extends SelfUpdateCommandStep {
@@ -72,14 +71,13 @@ function makeSelfUpdateCommand(
 function makeSelfUpdateCommandStep(
 	command: string,
 	args: string[],
-	options: { allowFailure?: boolean; suppressStderr?: boolean } = {},
+	options: { allowFailure?: boolean } = {},
 ): SelfUpdateCommandStep {
 	return {
 		command,
 		args,
 		display: [command, ...args].map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)).join(" "),
 		allowFailure: options.allowFailure,
-		suppressStderr: options.suppressStderr,
 	};
 }
 
@@ -244,7 +242,7 @@ function getSelfUpdateCommandForMethod(
 			const ensureBranch = makeSelfUpdateCommandStep(
 				"git",
 				["-C", repoRoot, "branch", "--track", "local", "origin/local"],
-				{ allowFailure: true, suppressStderr: true },
+				{ allowFailure: true },
 			);
 			const switchBranch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "switch", "local"]);
 			const update = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "merge", "--ff-only", "origin/local"]);
