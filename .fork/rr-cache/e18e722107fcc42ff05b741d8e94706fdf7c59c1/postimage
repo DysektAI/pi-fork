@@ -17,11 +17,16 @@ const vertexAuth: ApiKeyAuth = {
 		if (key) return { auth: { apiKey: key }, source: credential?.key ? "stored credential" : "GOOGLE_CLOUD_API_KEY" };
 
 		const adcPath = await ctx.env("GOOGLE_APPLICATION_CREDENTIALS");
-		const hasCredentials = await ctx.fileExists(adcPath ?? VERTEX_ADC_PATH);
+		const hasCredentialsFile = await ctx.fileExists(adcPath ?? VERTEX_ADC_PATH);
 		const hasProject = Boolean((await ctx.env("GOOGLE_CLOUD_PROJECT")) ?? (await ctx.env("GCLOUD_PROJECT")));
 		const hasLocation = Boolean(await ctx.env("GOOGLE_CLOUD_LOCATION"));
-		if (hasCredentials && hasProject && hasLocation) {
-			return { auth: {}, source: "gcloud application default credentials" };
+		if (hasProject && hasLocation) {
+			return {
+				auth: {},
+				source: hasCredentialsFile
+					? "gcloud application default credentials"
+					: "Google Cloud metadata credentials",
+			};
 		}
 		return undefined;
 	},

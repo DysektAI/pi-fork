@@ -83,10 +83,17 @@ RR_SRC=""
 RR_TMP=""
 if [[ -d "${TOPLEVEL}/.fork/rr-cache" ]]; then
 	RR_SRC="${TOPLEVEL}/.fork/rr-cache"
-elif git cat-file -t feat/fork-tooling:.fork/rr-cache >/dev/null 2>&1; then
-	RR_TMP="$(mktemp -d)"
-	git archive feat/fork-tooling .fork/rr-cache 2>/dev/null | tar -x -C "$RR_TMP" 2>/dev/null
-	RR_SRC="${RR_TMP}/.fork/rr-cache"
+else
+	# A fresh clone has no local feat/fork-tooling branch, only the remote-tracking
+	# ref, so try both before giving up.
+	for RR_REF in feat/fork-tooling origin/feat/fork-tooling; do
+		if git cat-file -t "${RR_REF}:.fork/rr-cache" >/dev/null 2>&1; then
+			RR_TMP="$(mktemp -d)"
+			git archive "$RR_REF" .fork/rr-cache 2>/dev/null | tar -x -C "$RR_TMP" 2>/dev/null
+			RR_SRC="${RR_TMP}/.fork/rr-cache"
+			break
+		fi
+	done
 fi
 if [[ -n "$RR_SRC" && -d "$RR_SRC" ]]; then
 	count=0
