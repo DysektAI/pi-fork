@@ -3,7 +3,7 @@ import { detectInstallMethod } from "../config.ts";
 import { getPiUserAgent } from "./pi-user-agent.ts";
 
 const UPSTREAM_VERSION_URL = "https://pi.dev/api/latest-version";
-const FORK_RELEASES_URL = "https://api.github.com/repos/DysektAI/pi/releases/latest";
+const FORK_RELEASES_URL = "https://api.github.com/repos/DysektAI/pi-fork/releases/latest";
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
 export interface LatestPiRelease {

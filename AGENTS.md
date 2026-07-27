@@ -16,10 +16,10 @@ This repository has one authoritative downstream release model. Do not reopen or
 - `upstream/main` is the canonical upstream history. `main` is an exact mirror pointer for it and must not contain DysektAI changes.
 - `local` is the single long-lived DysektAI branch: upstream history plus fork commits. Fork source releases and `+local.N` tags are built only from `local`.
 - `fork-sync.sh` is a maintainer operation. It advances the `main` mirror from `upstream/main`, merges that mirror into `local`, validates both refs, and atomically publishes `main` and `local`. It is not the end-user self-update command.
-- A source installation is recognized only from a checkout containing `.git`, `.fork/local-version`, and the expected `packages/coding-agent/package.json`. Its automatic version check queries only the latest `DysektAI/pi` GitHub release. It must never fall back to the upstream package feed.
+- A source installation is recognized only from a checkout containing `.git`, `.fork/local-version`, and the expected `packages/coding-agent/package.json`. Its automatic version check queries only the latest `DysektAI/pi-fork` GitHub release. It must never fall back to the upstream package feed.
 - For a verified source checkout, `pi update --self` fetches `origin/local`, switches to `local`, fast-forwards to `origin/local` (failing safely if `local` has diverged), runs `npm ci --ignore-scripts`, and rebuilds. It does not merge `upstream/main`, run `fork-sync.sh`, install the repository root through npm, or require a release tarball asset.
 - npm/pnpm/yarn/Bun installations are upstream package installations, not fork source checkouts. They remain on the published upstream package update channel.
-- If asked how fork updates work, state this model directly. Do not propose installing `github:DysektAI/pi`, adding a release `.tgz`, or replacing self-update with a `fork-sync.sh` instruction unless the user asks to change the established model.
+- If asked how fork updates work, state this model directly. Do not propose installing `github:DysektAI/pi-fork`, adding a release `.tgz`, or replacing self-update with a `fork-sync.sh` instruction unless the user asks to change the established model.
 
 See [FORK.md](FORK.md) for the operational guide.
 

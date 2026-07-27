@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   validate:
-    if: github.repository == 'DysektAI/pi'
+    if: github.repository == 'DysektAI/pi-fork'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -54,7 +54,7 @@ jobs:
 
   publish:
     needs: validate
-    if: github.repository == 'DysektAI/pi'
+    if: github.repository == 'DysektAI/pi-fork'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

@@ -1,7 +1,7 @@
 # Fork maintenance guide
 
 This repository is a fork of [`earendil-works/pi`](https://github.com/earendil-works/pi)
-(`upstream`) published at `DysektAI/pi` (`origin`).
+(`upstream`) published at `DysektAI/pi-fork` (`origin`).
 
 ## Branch model
 
@@ -19,12 +19,12 @@ history or branch rebuilding.
 
 Fork source releases are built only from `local` and use the version format
 `<upstream-version>+local.<N>`. They are published as GitHub releases in
-`DysektAI/pi`; the workspace package versions remain at the upstream version.
+`DysektAI/pi-fork`; the workspace package versions remain at the upstream version.
 
 A Pi process running from a verified fork source checkout follows only this
 fork release channel. Verification requires the checkout to contain `.git`,
 `.fork/local-version`, and the expected `packages/coding-agent/package.json`.
-Its automatic version check queries the latest `DysektAI/pi` GitHub release and
+Its automatic version check queries the latest `DysektAI/pi-fork` GitHub release and
 never falls back to the upstream package feed.
 
 For that source installation, `pi update --self` performs the consumer update:

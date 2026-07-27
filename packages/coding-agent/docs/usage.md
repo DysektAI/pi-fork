@@ -161,7 +161,7 @@ pi config                    # Enable/disable package resources
 
 These commands manage pi packages and `pi update` can update the pi CLI installation. To uninstall pi itself, see [Quickstart](quickstart.md#uninstall). `pi config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `pi update` never prompts for project trust.
 
-When running from a DysektAI fork source checkout, `pi update --self` checks only the latest `DysektAI/pi` GitHub release and updates the `local` source checkout by fetching `origin/local`, switching to `local`, fast-forwarding (fails safely if `local` has diverged), installing dependencies with `npm ci --ignore-scripts`, and rebuilding. It does not fall back to the upstream package feed or run `fork-sync.sh`. See the repository root `FORK.md`.
+When running from a DysektAI fork source checkout, `pi update --self` checks only the latest `DysektAI/pi-fork` GitHub release and updates the `local` source checkout by fetching `origin/local`, switching to `local`, fast-forwarding (fails safely if `local` has diverged), installing dependencies with `npm ci --ignore-scripts`, and rebuilding. It does not fall back to the upstream package feed or run `fork-sync.sh`. See the repository root `FORK.md`.
 
 See [Pi Packages](packages.md) for package sources and security notes.
 

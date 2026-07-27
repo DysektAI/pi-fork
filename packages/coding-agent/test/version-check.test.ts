@@ -100,7 +100,7 @@ describe("version checks", () => {
 			Response.json({
 				tag_name: "1.2.3+local.9",
 				body: "source build",
-				html_url: "https://github.com/DysektAI/pi/releases/tag/1.2.3%2Blocal.9",
+				html_url: "https://github.com/DysektAI/pi-fork/releases/tag/1.2.3%2Blocal.9",
 			}),
 		);
 		vi.stubGlobal("fetch", fetchMock);
@@ -108,7 +108,7 @@ describe("version checks", () => {
 		await expect(getLatestPiRelease("1.2.3+local.8")).resolves.toEqual({
 			version: "1.2.3+local.9",
 			note: "source build",
-			url: "https://github.com/DysektAI/pi/releases/tag/1.2.3%2Blocal.9",
+			url: "https://github.com/DysektAI/pi-fork/releases/tag/1.2.3%2Blocal.9",
 		});
 		expect(fetchMock).toHaveBeenCalledOnce();
 	});
@@ -120,7 +120,7 @@ describe("version checks", () => {
 
 		await expect(getLatestPiRelease("1.2.3+local.8")).rejects.toThrow("GitHub unavailable");
 		expect(fetchMock).toHaveBeenCalledOnce();
-		expect(fetchMock.mock.calls[0][0]).toBe("https://api.github.com/repos/DysektAI/pi/releases/latest");
+		expect(fetchMock.mock.calls[0][0]).toBe("https://api.github.com/repos/DysektAI/pi-fork/releases/latest");
 	});
 
 	it("skips automatic api calls when version checks are disabled", async () => {

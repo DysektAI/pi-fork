@@ -12,7 +12,7 @@
 
 # Pi Agent Harness
 
-> **DysektAI fork:** `main` mirrors `upstream/main`; `local` contains and releases the runnable fork. A verified source checkout checks only `DysektAI/pi` releases, and `pi update --self` fast-forwards `origin/local` and rebuilds it. It never updates from the upstream package channel. Maintainers use `fork-sync.sh` separately to merge upstream into `local`. See [FORK.md](FORK.md).
+> **DysektAI fork:** `main` mirrors `upstream/main`; `local` contains and releases the runnable fork. A verified source checkout checks only `DysektAI/pi-fork` releases, and `pi update --self` fast-forwards `origin/local` and rebuilds it. It never updates from the upstream package channel. Maintainers use `fork-sync.sh` separately to merge upstream into `local`. See [FORK.md](FORK.md).
 
 This is the home of the Pi agent harness project including our self extensible coding agent.
 
