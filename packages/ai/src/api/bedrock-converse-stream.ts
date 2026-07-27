@@ -125,7 +125,7 @@ export const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions> =
 				totalTokens: 0,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
-			stopReason: "stop",
+			stopReason: "pending",
 			timestamp: Date.now(),
 		};
 
@@ -285,6 +285,9 @@ export const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions> =
 				throw new Error("Request was aborted");
 			}
 
+			if (output.stopReason === "pending") {
+				throw new Error("Bedrock stream ended without a stop reason");
+			}
 			if (output.stopReason === "error" || output.stopReason === "aborted") {
 				throw new Error(output.errorMessage || "An unknown error occurred");
 			}
@@ -582,6 +585,7 @@ function supportsAdaptiveThinking(modelId: string, modelName?: string): boolean 
 			s.includes("opus-4-6") ||
 			s.includes("opus-4-7") ||
 			s.includes("opus-4-8") ||
+			s.includes("opus-5") ||
 			s.includes("sonnet-4-6") ||
 			s.includes("sonnet-5") ||
 			s.includes("fable-5"),
@@ -591,7 +595,12 @@ function supportsAdaptiveThinking(modelId: string, modelName?: string): boolean 
 function supportsNativeXhighEffort(model: Model<"bedrock-converse-stream">): boolean {
 	const candidates = getModelMatchCandidates(model.id, model.name);
 	return candidates.some(
-		(s) => s.includes("opus-4-7") || s.includes("opus-4-8") || s.includes("sonnet-5") || s.includes("fable-5"),
+		(s) =>
+			s.includes("opus-4-7") ||
+			s.includes("opus-4-8") ||
+			s.includes("opus-5") ||
+			s.includes("sonnet-5") ||
+			s.includes("fable-5"),
 	);
 }
 
@@ -670,8 +679,8 @@ function supportsPromptCaching(model: Model<"bedrock-converse-stream">, env?: Pr
 		if (getProviderEnvValue("AWS_BEDROCK_FORCE_CACHE", env) === "1") return true;
 		return false;
 	}
-	// Claude 5 models (fable-5, sonnet-5)
-	if (candidates.some((s) => s.includes("fable-5") || s.includes("sonnet-5"))) return true;
+	// Claude 5 models (fable-5, opus-5, sonnet-5)
+	if (candidates.some((s) => s.includes("fable-5") || s.includes("opus-5") || s.includes("sonnet-5"))) return true;
 	// Claude 4.x models (opus-4, sonnet-4, haiku-4)
 	if (candidates.some((s) => s.includes("-4-"))) return true;
 	// Claude 3.7 Sonnet

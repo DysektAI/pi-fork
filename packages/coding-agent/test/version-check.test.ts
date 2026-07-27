@@ -6,13 +6,14 @@ import {
 	getLatestPiVersion,
 	isNewerPackageVersion,
 } from "../src/utils/version-check.ts";
+import { allowNetwork } from "./test-network-env.ts";
 
 const originalSkipVersionCheck = process.env.PI_SKIP_VERSION_CHECK;
-const originalOffline = process.env.PI_OFFLINE;
 const originalPackageDir = process.env.PI_PACKAGE_DIR;
 
 beforeEach(() => {
 	process.env.PI_PACKAGE_DIR = "/opt/pi-installed";
+	allowNetwork();
 });
 
 afterEach(() => {
@@ -21,11 +22,6 @@ afterEach(() => {
 		delete process.env.PI_SKIP_VERSION_CHECK;
 	} else {
 		process.env.PI_SKIP_VERSION_CHECK = originalSkipVersionCheck;
-	}
-	if (originalOffline === undefined) {
-		delete process.env.PI_OFFLINE;
-	} else {
-		process.env.PI_OFFLINE = originalOffline;
 	}
 	if (originalPackageDir === undefined) {
 		delete process.env.PI_PACKAGE_DIR;
