@@ -35,9 +35,12 @@ if [ $RUN_BROWSER_SMOKE -eq 1 ]; then
   fi
 fi
 
-# Restage files that were previously staged and may have been modified by formatting
+# Restage files that were previously staged and may have been modified by formatting.
+# Skip ignored paths: a commit that untracks a file via `git rm --cached` while
+# adding it to .gitignore leaves the file on disk, and `git add` refuses it. The
+# hook runs under `sh -e`, so that failure would abort the whole commit.
 for file in $STAGED_FILES; do
-  if [ -f "$file" ]; then
+  if [ -f "$file" ] && ! git check-ignore -q "$file"; then
     git add "$file"
   fi
 done
