@@ -510,7 +510,7 @@ async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
 	for (const step of command.steps ?? [command]) {
 		await new Promise<void>((resolve, reject) => {
 			const child = spawnProcess(step.command, step.args, {
-				stdio: "inherit",
+				stdio: step.suppressStderr ? ["inherit", "inherit", "ignore"] : "inherit",
 			});
 			child.on("error", (error) => {
 				reject(error);
@@ -518,10 +518,10 @@ async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {
 			child.on("close", (code, signal) => {
 				if (code === 0) {
 					resolve();
-				} else if (step.allowFailure) {
-					resolve();
 				} else if (signal) {
 					reject(new Error(`${step.display} terminated by signal ${signal}`));
+				} else if (step.allowFailure) {
+					resolve();
 				} else {
 					reject(new Error(`${step.display} exited with code ${code ?? "unknown"}`));
 				}
