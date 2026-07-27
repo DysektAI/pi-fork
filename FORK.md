@@ -45,7 +45,9 @@ fast-forward safely; failures stop and print the exact fallback command.
 npm, pnpm, yarn, and Bun global installations are upstream package installs,
 not fork source checkouts. They continue to use the published upstream package
 channel. To run and self-update the fork, launch Pi from the `local` source
-checkout.
+checkout, or through a global shim whose package directory links into the
+checkout (a Windows directory junction or `npm link`); the link is resolved
+and the checkout is detected the same way.
 
 ## Syncing with upstream
 

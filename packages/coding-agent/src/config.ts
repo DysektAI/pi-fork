@@ -96,12 +96,25 @@ function isPiSourceCheckoutRoot(dir: string): boolean {
 function findSourceCheckoutRoot(): string | undefined {
 	// Use the executable entrypoint rather than this module's source location so
 	// tests and wrappers can model non-source installs from inside the repository.
-	let dir = dirname(process.env.PI_PACKAGE_DIR || process.argv[1] || process.execPath || __dirname);
-	for (let i = 0; i < 8; i++) {
-		if (isPiSourceCheckoutRoot(dir)) return dir;
-		const parent = dirname(dir);
-		if (parent === dir) break;
-		dir = parent;
+	const start = process.env.PI_PACKAGE_DIR || process.argv[1] || process.execPath || __dirname;
+	// Global shims may reach this package through a junction or symlink (Windows
+	// directory junction, `npm link`). A lexical walk from the link path escapes
+	// the repository, so also walk from the resolved real path.
+	const candidates = [start];
+	try {
+		const real = realpathSync(start);
+		if (real !== start) candidates.push(real);
+	} catch {
+		// Modeled path does not exist (tests); lexical walk only.
+	}
+	for (const candidate of candidates) {
+		let dir = dirname(candidate);
+		for (let i = 0; i < 8; i++) {
+			if (isPiSourceCheckoutRoot(dir)) return dir;
+			const parent = dirname(dir);
+			if (parent === dir) break;
+			dir = parent;
+		}
 	}
 	return undefined;
 }

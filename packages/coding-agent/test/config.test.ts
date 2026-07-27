@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { delimiter, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -65,6 +65,37 @@ function createSourceCheckout(withForkMarkers = true): { root: string; packageDi
 	process.env.PI_PACKAGE_DIR = packageDir;
 	setExecPath(join(packageDir, "dist", "cli.js"));
 	return { root, packageDir };
+}
+
+/**
+ * Model a global package-manager shim whose package directory links to a fork
+ * source checkout (Windows directory junction, `npm link`). The entrypoint is
+ * reached through the link path, so lexical ancestor walks never enter the
+ * checkout; detection must resolve the link. Everything lives under one temp
+ * root so cleanup removes both the shim tree and the checkout.
+ */
+function createLinkedSourceShim(): { root: string; entrypoint: string } {
+	const temp = mkdtempSync(join(tmpdir(), "pi-linked-"));
+	const root = join(temp, "checkout");
+	const packageDir = join(root, "packages", "coding-agent");
+	mkdirSync(join(root, ".git"), { recursive: true });
+	mkdirSync(join(root, ".fork"), { recursive: true });
+	writeFileSync(join(root, ".fork", "local-version"), "1.2.3+local.1\n");
+	mkdirSync(join(packageDir, "dist"), { recursive: true });
+	writeFileSync(
+		join(packageDir, "package.json"),
+		JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "1.2.3" }),
+	);
+	// The entrypoint must exist for realpath resolution through the link.
+	writeFileSync(join(packageDir, "dist", "cli.js"), "// linked shim target\n");
+	const scopeDir = join(temp, "shim", "node_modules", "@earendil-works");
+	mkdirSync(scopeDir, { recursive: true });
+	symlinkSync(packageDir, join(scopeDir, "pi-coding-agent"), "junction");
+	tempDir = temp;
+	delete process.env.PI_PACKAGE_DIR;
+	const entrypoint = join(scopeDir, "pi-coding-agent", "dist", "cli.js");
+	process.argv[1] = entrypoint;
+	return { root, entrypoint };
 }
 
 function createNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {
@@ -224,6 +255,19 @@ describe("detectInstallMethod", () => {
 				display: `git -C ${root} merge --ff-only origin/local`,
 			},
 		]);
+	});
+
+	test("detects a source checkout behind a linked global shim", () => {
+		const { root } = createLinkedSourceShim();
+
+		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
+
+		expect(detectInstallMethod()).toBe("source");
+		expect(command?.steps?.[0]).toEqual({
+			command: "git",
+			args: ["-C", root, "fetch", "origin", "local:refs/remotes/origin/local"],
+			display: `git -C ${root} fetch origin local:refs/remotes/origin/local`,
+		});
 	});
 
 	test("self-updates npm installs from custom prefixes", () => {
