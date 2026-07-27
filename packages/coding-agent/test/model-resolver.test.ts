@@ -328,6 +328,7 @@ describe("resolveModelScopeWithDiagnostics", () => {
 		expect(result.diagnostics).toEqual([
 			{
 				type: "warning",
+				code: "invalid-thinking-level",
 				message:
 					'Invalid thinking level "invalid" in pattern "custom/bracketed-model[1m]:invalid". Using default instead.',
 				pattern: "custom/bracketed-model[1m]:invalid",
