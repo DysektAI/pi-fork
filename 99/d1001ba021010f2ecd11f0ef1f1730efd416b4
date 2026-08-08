@@ -1,0 +1,22 @@
+packages/coding-agent/src/config.ts
+  s_1fce50505b36d3::t_28f2432a45a0f1 113-119
+packages/coding-agent/test/config.test.ts
+  s_1fce50505b36d3::t_6541255eccb47f 273-284
+  s_1fce50505b36d3::t_50df61da817c04 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "99d1001ba021010f2ecd11f0ef1f1730efd416b4",
+  "prompts": {},
+  "sessions": {
+    "s_1fce50505b36d3": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe296-e16e-75ed-a200-a6c8debac5bb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "DysektAI <33468668+DysektAI@users.noreply.github.com>"
+    }
+  }
+}
