@@ -532,7 +532,14 @@ class SqliteSessionStorage implements SessionStorage<SqliteSessionMetadata> {
 	}
 
 	async findEntries(query: EntryQuery = {}): Promise<Entry[]> {
-		const rows = readEntryRows(this.db, this.metadata.id, { order: query.order });
+		const sqlType = query.type ?? (query.customType === undefined ? undefined : "custom");
+		const sqlLimit = query.customType === undefined ? query.limit : undefined;
+		const rows = readEntryRows(this.db, this.metadata.id, {
+			cursor: query.cursor,
+			limit: sqlLimit,
+			order: query.order,
+			type: sqlType,
+		});
 		const entries = rows.map(decodeEntry).filter((entry) => matchesEntryQuery(entry, query));
 		return query.limit === undefined ? entries : entries.slice(0, query.limit);
 	}

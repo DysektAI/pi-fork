@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added a fullscreen exit output setting to choose between printing the final transcript and only a session resume hint.
+
+### Changed
+
+- Replaced the inherited Mistral SDK transport with a native Chat Completions HTTP stream, eliminating its generated client and schema runtime overhead.
+
 ## [0.84.1] - 2026-08-07
 
 ### New Features
