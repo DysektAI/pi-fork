@@ -34,7 +34,18 @@ jobs:
           CURRENT_VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
           BASE_VERSION="${CURRENT_VERSION%%+local.*}"
           BASE_VERSION="${BASE_VERSION%%.local.*}"
-          FULL_VERSION="${BASE_VERSION}+local.${GITHUB_RUN_NUMBER}"
+          CURRENT_MARKER=$(cat .fork/local-version 2>/dev/null || true)
+          CURRENT_ITERATION=0
+          if [[ "$CURRENT_MARKER" =~ ^${BASE_VERSION//./\.}\+local\.([0-9]+)$ ]]; then
+            CURRENT_ITERATION="${BASH_REMATCH[1]}"
+          fi
+          LAST_RELEASE_ITERATION=$(git tag --list "${BASE_VERSION}+local.*" \
+            | sed -n "s/^${BASE_VERSION//./\.}+local\.//p" \
+            | sort -n \
+            | tail -1)
+          LAST_RELEASE_ITERATION="${LAST_RELEASE_ITERATION:-0}"
+          NEXT_ITERATION=$(( CURRENT_ITERATION > LAST_RELEASE_ITERATION ? CURRENT_ITERATION + 1 : LAST_RELEASE_ITERATION + 1 ))
+          FULL_VERSION="${BASE_VERSION}+local.${NEXT_ITERATION}"
           TAG="${FULL_VERSION}"
 
           git config user.name 'github-actions[bot]'
@@ -89,7 +100,7 @@ jobs:
 
           gh release create "$TAG" \
             --verify-tag \
-            --title "pi ${VERSION} — local source build ${GITHUB_RUN_NUMBER}" \
+            --title "pi ${VERSION} — local source build ${FULL_VERSION##*+local.}" \
             --notes "Auto-released from the validated \`local\` source branch.
 
           **Source version:** ${FULL_VERSION}

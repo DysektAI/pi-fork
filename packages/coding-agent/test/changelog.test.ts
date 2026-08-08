@@ -204,4 +204,10 @@ describe("getNewEntries", () => {
 		const result = getNewEntries(entries, "1");
 		expect(result).toHaveLength(2);
 	});
+
+	it("ignores fork build metadata when comparing the last shown version", () => {
+		expect(getNewEntries(entries, "1.1.0+local.21")).toEqual([entries[0]]);
+		expect(getNewEntries(entries, "1.1.0.local.21")).toEqual([entries[0]]);
+		expect(getNewEntries(entries, "2.0.0+local.1")).toEqual([]);
+	});
 });

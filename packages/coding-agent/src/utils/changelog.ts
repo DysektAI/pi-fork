@@ -179,12 +179,11 @@ export function compareVersions(v1: ChangelogEntry, v2: ChangelogEntry): number 
  * Get entries newer than lastVersion
  */
 export function getNewEntries(entries: ChangelogEntry[], lastVersion: string): ChangelogEntry[] {
-	// Parse lastVersion
-	const parts = lastVersion.split(".").map(Number);
+	const match = /^(?:v)?(\d+)(?:\.(\d+))?(?:\.(\d+))?/.exec(lastVersion.trim());
 	const last: ChangelogEntry = {
-		major: parts[0] || 0,
-		minor: parts[1] || 0,
-		patch: parts[2] || 0,
+		major: Number(match?.[1] ?? 0),
+		minor: Number(match?.[2] ?? 0),
+		patch: Number(match?.[3] ?? 0),
 		content: "",
 	};
 

@@ -110,19 +110,6 @@
       }
     },
     {
-      "branch": "refactor/deduplicate-shared-utils",
-      "summary": "Deduplicate truncate/messages/compaction utils between agent and coding-agent.",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-present",
-        "ref": "upstream/main",
-        "file": "packages/agent/src/index.ts",
-        "pattern": "FileOperations",
-        "note": "REDUNDANT if upstream exports the shared utilities itself."
-      }
-    },
-    {
       "branch": "feat/reasoning-trace-label",
       "summary": "Prefix rendered reasoning/thinking blocks with a bold [Thinking] header so the trace is unambiguous at a glance (pi normalizes every provider's reasoning channel into one 'thinking' type).",
       "base": "main",

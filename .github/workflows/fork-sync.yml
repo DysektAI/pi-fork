@@ -3,7 +3,7 @@ name: Fork sync
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 3 * * *"
 
 permissions: {}
 

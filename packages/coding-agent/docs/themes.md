@@ -71,6 +71,7 @@ vim ~/.pi/agent/themes/my-theme.json
     "text": "",
     "thinkingText": "secondary",
     "selectedBg": "#2d2d30",
+    "scrollbarThumb": "#555566",
     "userMessageBg": "#2d2d30",
     "userMessageText": "",
     "customMessageBg": "#2d2d30",
@@ -140,13 +141,13 @@ vim ~/.pi/agent/themes/my-theme.json
 
 - `name` is required, must be unique, and must not contain `/`.
 - `vars` is optional. Define reusable colors here, then reference them in `colors`.
-- `colors` must define all 51 required tokens. `thinkingMax` falls back to `thinkingXhigh` and `toolPath` falls back to `accent`; both are optional.
+- `colors` must define all 51 required tokens. `thinkingMax`, `toolPath`, and `scrollbarThumb` are optional; they fall back to `thinkingXhigh`, `accent`, and `selectedBg`, respectively.
 
 The `$schema` field enables editor auto-completion and validation.
 
 ## Color Tokens
 
-Every theme must define all 51 required color tokens. `thinkingMax` (falls back to `thinkingXhigh`) and `toolPath` (falls back to `accent`) are optional for compatibility with existing themes.
+Every theme must define all 51 required color tokens. `thinkingMax`, `toolPath`, and `scrollbarThumb` are optional for compatibility with existing themes; when omitted, they use `thinkingXhigh`, `accent`, and `selectedBg`, respectively.
 
 ### Core UI (11 colors)
 
@@ -164,11 +165,12 @@ Every theme must define all 51 required color tokens. `thinkingMax` (falls back 
 | `text` | Default text (usually `""`) |
 | `thinkingText` | Thinking block text |
 
-### Backgrounds & Content (11 colors)
+### Backgrounds & Content (11 required, 1 optional)
 
 | Token | Purpose |
 |-------|---------|
 | `selectedBg` | Selected line background |
+| `scrollbarThumb` | Fullscreen scrollbar thumb background; optional, falls back to `selectedBg` |
 | `userMessageBg` | User message background |
 | `userMessageText` | User message text |
 | `customMessageBg` | Extension message background |

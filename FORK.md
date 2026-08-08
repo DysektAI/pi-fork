@@ -79,11 +79,12 @@ maintenance machinery.
 
 ## Automation
 
-Use one scheduler only. GitHub Actions is preferred because it is independent
-of a workstation. The local systemd timer is a fallback and should be disabled
-when the GitHub workflow is enabled.
+The GitHub Actions workflow is the only upstream-integration scheduler. It runs
+daily and publishes validated `main` and `local` refs. The local systemd timer
+is a separate consumer job: it only fast-forwards the on-disk checkout to
+`origin/local` and rebuilds `dist/`; it must never merge upstream or push.
 
-The scheduler should run `./fork-sync.sh`. If it fails, inspect the conflicting
+The GitHub scheduler should run `./fork-sync.sh`. If it fails, inspect the conflicting
 files, resolve them on `local`, complete the merge, run the checks, and push.
 This is the maintainer path that integrates new upstream source and publishes a
 validated `origin/local` for source installations to consume.
