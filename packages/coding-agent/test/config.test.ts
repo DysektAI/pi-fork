@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { delimiter, join } from "path";
+import { delimiter, dirname, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
 	detectInstallMethod,
@@ -268,6 +268,18 @@ describe("detectInstallMethod", () => {
 			args: ["-C", root, "fetch", "origin", "local:refs/remotes/origin/local"],
 			display: `git -C ${root} fetch origin local:refs/remotes/origin/local`,
 		});
+	});
+
+	test("uses the canonical checkout path for source updates through a symlinked parent", () => {
+		const { root, entrypoint } = createLinkedSourceShim();
+		const linkedRoot = join(dirname(dirname(dirname(dirname(dirname(entrypoint))))), "current");
+		symlinkSync(root, linkedRoot, "junction");
+		process.argv[1] = join(linkedRoot, "packages", "coding-agent", "dist", "cli.js");
+
+		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
+
+		expect(command?.steps?.[0]?.args.slice(0, 2)).toEqual(["-C", root]);
+		expect(command?.steps?.[4]?.args.slice(0, 2)).toEqual(["--prefix", root]);
 	});
 
 	test("self-updates npm installs from custom prefixes", () => {

@@ -110,7 +110,13 @@ function findSourceCheckoutRoot(): string | undefined {
 	for (const candidate of candidates) {
 		let dir = dirname(candidate);
 		for (let i = 0; i < 8; i++) {
-			if (isPiSourceCheckoutRoot(dir)) return dir;
+			if (isPiSourceCheckoutRoot(dir)) {
+				try {
+					return realpathSync(dir);
+				} catch {
+					return dir;
+				}
+			}
 			const parent = dirname(dir);
 			if (parent === dir) break;
 			dir = parent;
