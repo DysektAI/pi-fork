@@ -12,11 +12,10 @@ function createFakeTui(): TUI {
 
 /** Return the model id of the highlighted (→) row in the rendered selector. */
 function selectedModelId(rendered: string): string | undefined {
-	const line = rendered.split("\n").find((l) => l.startsWith("→ "));
+	const line = rendered.split("\n").find((value) => value.startsWith("→ "));
 	if (!line) return undefined;
-	const rest = line.replace(/^→\s*/, "");
-	const id = rest.split(" [")[0];
-	return id?.trim() || undefined;
+	const rest = line.replace(/^→\s*/, "").replace(/^\[[^\]]+\]\s*/, "");
+	return rest.replace(/\s+✓$/, "").trim() || undefined;
 }
 
 describe("model selector filter resets selection to top", () => {
