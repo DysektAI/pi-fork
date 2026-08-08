@@ -119,6 +119,7 @@ if [[ "$already_current" -eq 0 ]]; then
 	fi
 fi
 
+allow_lockfile_change=0
 if [[ "$DO_TEST" -eq 1 ]]; then
 	if [[ "${FORK_SYNC_NPM_CI:-0}" == "1" ]]; then
 		say "Installing dependencies"
@@ -137,8 +138,14 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 	fi
 
 	say "Running repository checks"
-	node scripts/check-lockfile-commit.mjs
-	npm run check
+	if git diff --cached --name-only -- package-lock.json | grep -q .; then
+		if ! git diff --cached --quiet main -- package-lock.json; then
+			fail "Merged package-lock.json differs from upstream/main. Review the dependency changes manually."
+		fi
+		allow_lockfile_change=1
+	fi
+	PI_ALLOW_LOCKFILE_CHANGE="$allow_lockfile_change" node scripts/check-lockfile-commit.mjs
+	PI_ALLOW_LOCKFILE_CHANGE="$allow_lockfile_change" npm run check
 	unexpected="$(unexpected_changes)"
 	if [[ -n "$unexpected" ]]; then
 		fail "$(printf 'Repository checks modified tracked files:\n%s' "$unexpected")"
@@ -156,7 +163,7 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 fi
 
 if [[ "$already_current" -eq 0 ]]; then
-	git commit -m "merge: sync upstream/main into local"
+	PI_ALLOW_LOCKFILE_CHANGE="$allow_lockfile_change" git commit -m "merge: sync upstream/main into local"
 fi
 trap - ERR INT TERM
 
