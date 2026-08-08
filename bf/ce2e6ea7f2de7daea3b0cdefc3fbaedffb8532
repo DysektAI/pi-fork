@@ -1,0 +1,20 @@
+fork-sync.sh
+  s_0dc0f94b0ad53f::t_1f859120e161ed 122
+  s_0dc0f94b0ad53f::t_bad47246245570 141-148,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bfce2e6ea7f2de7daea3b0cdefc3fbaedffb8532",
+  "prompts": {},
+  "sessions": {
+    "s_0dc0f94b0ad53f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe22f-724a-7f40-9d43-d61fa1c79c93",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "DysektAI <33468668+DysektAI@users.noreply.github.com>"
+    }
+  }
+}
