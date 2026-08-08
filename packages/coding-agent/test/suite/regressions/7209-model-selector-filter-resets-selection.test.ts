@@ -15,7 +15,7 @@ function selectedModelId(rendered: string): string | undefined {
 	const line = rendered.split("\n").find((value) => value.startsWith("→ "));
 	if (!line) return undefined;
 	const rest = line.replace(/^→\s*/, "").replace(/^\[[^\]]+\]\s*/, "");
-	return rest.replace(/\s+✓$/, "").trim() || undefined;
+	return rest.replace(/\s+✓\s*$/, "").trim() || undefined;
 }
 
 describe("model selector filter resets selection to top", () => {
