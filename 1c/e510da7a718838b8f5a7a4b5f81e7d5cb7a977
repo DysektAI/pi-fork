@@ -1,0 +1,23 @@
+packages/ai/src/utils/provider-retry.ts
+  s_cbfb56ff10f3a2::t_0c07cfeebd5b6b 109
+packages/coding-agent/test/suite/regressions/7209-model-selector-filter-resets-selection.test.ts
+  s_cbfb56ff10f3a2::t_27d773bf8cb045 15,17-18
+packages/coding-agent/test/package-command-paths.test.ts
+  s_cbfb56ff10f3a2::t_b7903ddb24ab3a 509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1ce510da7a718838b8f5a7a4b5f81e7d5cb7a977",
+  "prompts": {},
+  "sessions": {
+    "s_cbfb56ff10f3a2": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe1e0-6a88-7843-9f26-9213bff4c384",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "DysektAI <33468668+DysektAI@users.noreply.github.com>"
+    }
+  }
+}
