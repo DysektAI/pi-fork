@@ -606,7 +606,7 @@ class SqliteSessionStorage implements SessionStorage<SqliteSessionMetadata> {
 							kind: "fact" as const,
 							seq: row.seq,
 							fact: "name" as const,
-							name: JSON.parse(row.value ?? "null") as string,
+							name: row.value === null ? undefined : (JSON.parse(row.value) as string),
 						};
 					return {
 						kind: "fact" as const,
@@ -627,10 +627,10 @@ class SqliteSessionStorage implements SessionStorage<SqliteSessionMetadata> {
 		return row?.value === undefined || row.value === null ? undefined : (JSON.parse(row.value) as string);
 	}
 
-	async setName(name: string): Promise<void> {
+	async setName(name: string | undefined): Promise<void> {
 		return this.enqueueWrite(() => {
 			const seq = getNextSequence(this.db, this.metadata.id);
-			appendFact(this.db, this.metadata.id, seq, "name", null, JSON.stringify(name));
+			appendFact(this.db, this.metadata.id, seq, "name", null, name === undefined ? null : JSON.stringify(name));
 			advanceSequence(this.db, this.metadata.id, seq);
 		});
 	}
