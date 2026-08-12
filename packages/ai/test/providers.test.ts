@@ -10,6 +10,7 @@ import { cloudflareAIGatewayProvider } from "../src/providers/cloudflare-ai-gate
 import { cloudflareWorkersAIProvider } from "../src/providers/cloudflare-workers-ai.ts";
 import { fauxAssistantMessage, fauxProvider } from "../src/providers/faux.ts";
 import { googleVertexProvider } from "../src/providers/google-vertex.ts";
+import { parseSyntheticModel, syntheticProvider } from "../src/providers/synthetic.ts";
 import type { Api, Context, Model, ProviderStreams } from "../src/types.ts";
 import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
 
@@ -53,6 +54,39 @@ describe("builtin providers", () => {
 			supportsOpenAIGrammarTools: true,
 		});
 		expect(getBuiltinModel("anthropic", "claude-haiku-4-5").compat?.supportsStrictTools).toBe(true);
+	});
+
+	it("registers Synthetic with stable aliases and OpenAI compatibility", () => {
+		const provider = syntheticProvider();
+		expect(provider.name).toBe("Synthetic");
+		expect(provider.getModels().map((model) => model.id)).toContain("syn:large:text");
+		expect(provider.getModels().find((model) => model.id === "syn:large:vision")?.input).toEqual(["text", "image"]);
+		expect(provider.getModels().find((model) => model.id === "syn:large:text")?.compat).toMatchObject({
+			supportsDeveloperRole: false,
+			supportsReasoningEffort: true,
+			maxTokensField: "max_completion_tokens",
+		});
+	});
+
+	it("parses Synthetic model catalog entries", () => {
+		const model = parseSyntheticModel({
+			id: "syn:test",
+			name: "Synthetic Test",
+			context_length: 1000,
+			max_output_length: 200,
+			input_modalities: ["text", "image"],
+			supported_features: ["tools", "reasoning"],
+			reasoning_parameters: { efforts: ["none", "low", "high"] },
+			pricing: { prompt: "$0.000001", completion: "$0.000003" },
+		});
+		expect(model).toMatchObject({
+			id: "syn:test",
+			input: ["text", "image"],
+			contextWindow: 1000,
+			maxTokens: 200,
+			cost: { input: 1, output: 3 },
+		});
+		expect(model?.thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", medium: null });
 	});
 
 	it("uses official Kimi K3 pricing for Moonshot providers", () => {

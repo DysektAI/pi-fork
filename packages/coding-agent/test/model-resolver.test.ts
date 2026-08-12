@@ -684,6 +684,10 @@ describe("default model selection", () => {
 		expect(defaultModelPerProvider["vercel-ai-gateway"]).toBe("zai/glm-5.1");
 	});
 
+	test("Synthetic defaults to the stable large text alias", () => {
+		expect(defaultModelPerProvider.synthetic).toBe("syn:large:text");
+	});
+
 	test("findInitialModel accepts explicit provider custom model ids", async () => {
 		const registry = {
 			getModels: () => allModels,

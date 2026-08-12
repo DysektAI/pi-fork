@@ -85,6 +85,7 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
 - **Fireworks** (uses OpenAI- and Anthropic-compatible APIs)
 - **Kimi For Coding** (Moonshot AI subscription endpoint, uses Anthropic-compatible API)
 - **Xiaomi MiMo** (defaults to API billing endpoint, with separate Token Plan providers for `cn`/`ams`/`sgp` regions)
+- **Synthetic** (OpenAI-compatible, with dynamic catalog refresh and stable `syn:` aliases)
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
 ## Installation
@@ -441,6 +442,7 @@ Built-in providers resolve these env vars (Node.js; in browsers pass `apiKey` ex
 | Xiaomi MiMo Token Plan (Amsterdam) | `XIAOMI_TOKEN_PLAN_AMS_API_KEY` |
 | Xiaomi MiMo Token Plan (Singapore) | `XIAOMI_TOKEN_PLAN_SGP_API_KEY` |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` |
+| Synthetic | `SYNTHETIC_API_KEY` |
 
 Amazon Bedrock resolves ambient AWS credentials (`AWS_PROFILE`, access key pairs, `AWS_BEARER_TOKEN_BEDROCK`, ECS task roles, web identity tokens); its provider-owned login flow supports bearer tokens, AWS profiles, and the existing credential chain. Vertex AI resolves either an explicit key or gcloud Application Default Credentials plus project/location, with a provider-owned login flow for API keys, ADC, and service-account files.
 
@@ -1394,6 +1396,7 @@ models.setProvider(openaiProvider());
 
 Rules:
 
+- Synthetic is an OpenAI-compatible provider at `https://api.synthetic.new/openai/v1`. It uses the provider's stable `syn:` aliases, refreshes `/models`, supports text/vision models, tools, and `reasoning_effort`, and authenticates with `SYNTHETIC_API_KEY` or a stored API key.
 - `@earendil-works/pi-ai` is the core entrypoint and does not import built-in catalogs, provider factories, or SDK implementations.
 - `@earendil-works/pi-ai/providers/<provider>` imports that provider's catalog and lazy API wrapper only.
 - `@earendil-works/pi-ai/providers/all` imports every built-in provider factory and all catalogs. Use it only when you want the full built-in set.

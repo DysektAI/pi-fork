@@ -88,6 +88,11 @@ export function withRemoteCatalog(
 						return;
 					}
 					if (response.status === 404 || response.status === 501) {
+						if (provider.refreshModels) {
+							await provider.refreshModels(context);
+							dynamicModels = [];
+							return;
+						}
 						dynamicModels = [];
 						await context.store.write({ models: [], checkedAt, lastModified: 0 });
 						return;

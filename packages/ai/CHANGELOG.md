@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added the Synthetic OpenAI-compatible provider with dynamic model discovery, stable `syn:` aliases, reasoning controls, and vision support.
 - Added per-request `fetch` injection for supported text and image provider transports; Google adapters reject non-global implementations rather than silently bypassing them.
 - Added Claude Opus 5 support for the GitHub Copilot provider, routing through the Anthropic Messages API with adaptive thinking, 1M context, and the Copilot `minimal` thinking-level override.
 
