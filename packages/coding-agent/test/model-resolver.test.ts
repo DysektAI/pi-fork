@@ -749,7 +749,6 @@ describe("default model selection", () => {
 	test("Synthetic defaults to the stable large text alias", () => {
 		expect(defaultModelPerProvider.synthetic).toBe("syn:large:text");
 	});
-	});
 
 	test("findInitialModel accepts explicit provider custom model ids", async () => {
 		const registry = {
