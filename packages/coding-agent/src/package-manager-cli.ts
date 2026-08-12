@@ -11,6 +11,7 @@ import {
 	getPackageDir,
 	getSelfUpdateCommand,
 	getSelfUpdateUnavailableInstruction,
+	getSourceSelfUpdateBlockers,
 	PACKAGE_NAME,
 	type SelfUpdateCommand,
 	type SelfUpdatePackageTarget,
@@ -891,6 +892,15 @@ export async function handlePackageCommand(
 					const selfUpdateCommand = getSelfUpdateCommand(PACKAGE_NAME, selfUpdateNpmCommand, selfUpdateTarget);
 					if (!selfUpdateCommand) {
 						printSelfUpdateUnavailable(selfUpdateNpmCommand, selfUpdateTarget);
+						process.exitCode = 1;
+						return true;
+					}
+					const blockers = getSourceSelfUpdateBlockers();
+					if (blockers.length > 0) {
+						for (const blocker of blockers) {
+							console.error(chalk.red(`Error: ${blocker}`));
+						}
+						printSelfUpdateFallback(selfUpdateCommand);
 						process.exitCode = 1;
 						return true;
 					}

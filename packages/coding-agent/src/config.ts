@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, readFileSync, realpathSync } from "fs";
+import { accessSync, closeSync, constants, existsSync, openSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join, resolve, sep, win32 } from "path";
 import { fileURLToPath } from "url";
@@ -398,6 +398,66 @@ function isManagedByGlobalPackageManager(method: InstallMethod, packageName: str
 			return packageDirCandidates.some((packageDir) => packageDir.startsWith(rootPrefix));
 		});
 	});
+}
+
+/**
+ * A running pi session on Windows memory-maps its native TUI module
+ * (win32-console-mode.node), which prevents Git from unlinking and replacing
+ * it during a source self-update. Opening the file for write without
+ * truncating fails with EBUSY/EPERM/EACCES while it is mapped and succeeds
+ * otherwise, giving a non-destructive lock probe.
+ */
+function getLockedNativeModulePaths(repoRoot: string): string[] {
+	if (process.platform !== "win32") return [];
+	const arch = process.arch;
+	if (arch !== "x64" && arch !== "arm64") return [];
+
+	const candidate = join(
+		repoRoot,
+		"packages",
+		"tui",
+		"native",
+		"win32",
+		"prebuilds",
+		`win32-${arch}`,
+		"win32-console-mode.node",
+	);
+	if (!existsSync(candidate)) return [];
+
+	try {
+		const fd = openSync(candidate, "r+");
+		closeSync(fd);
+		return [];
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		return code === "EBUSY" || code === "EPERM" || code === "EACCES" ? [candidate] : [];
+	}
+}
+
+/**
+ * Returns human-readable blockers that would make a fork source self-update
+ * fail with a raw Git error, so callers can surface a clear message instead.
+ * An empty array means the checkout is safe to update.
+ */
+export function getSourceSelfUpdateBlockers(): string[] {
+	if (detectInstallMethod() !== "source") return [];
+	const repoRoot = findSourceCheckoutRoot();
+	if (!repoRoot) return [];
+
+	const blockers: string[] = [];
+
+	const status = readCommandOutput("git", ["-C", repoRoot, "status", "--porcelain"]);
+	if (status) {
+		blockers.push("The source checkout has uncommitted changes. Commit or stash them, then run the update again.");
+	}
+
+	if (getLockedNativeModulePaths(repoRoot).length > 0) {
+		blockers.push(
+			"A running pi session is locking its native module. Close all pi sessions and run the update from a plain terminal.",
+		);
+	}
+
+	return blockers;
 }
 
 export function getSelfUpdateCommand(
