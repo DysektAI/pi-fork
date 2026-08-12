@@ -6,6 +6,7 @@ import {
 	detectInstallMethod,
 	getSelfUpdateCommand,
 	getSelfUpdateUnavailableInstruction,
+	getSourceSelfUpdateBlockers,
 	getUpdateInstruction,
 } from "../src/config.ts";
 
@@ -548,5 +549,28 @@ describe("detectInstallMethod", () => {
 		expect(getSelfUpdateUnavailableInstruction("@earendil-works/pi-coding-agent")).toContain(
 			"the install path is not writable",
 		);
+	});
+});
+
+describe("getSourceSelfUpdateBlockers", () => {
+	test("returns no blockers for a clean source checkout", () => {
+		createSourceCheckout();
+
+		expect(getSourceSelfUpdateBlockers()).toEqual([]);
+	});
+
+	test("returns no blockers for a non-source install", () => {
+		process.env.PI_PACKAGE_DIR = "C:\\Users\\Admin\\pnpm-global\\node_modules\\@earendil-works\\pi-coding-agent";
+
+		expect(getSourceSelfUpdateBlockers()).toEqual([]);
+	});
+
+	test("returns no blockers when the native module is present but not locked", () => {
+		const { root } = createSourceCheckout();
+		const nativeDir = join(root, "packages", "tui", "native", "win32", "prebuilds", `win32-${process.arch}`);
+		mkdirSync(nativeDir, { recursive: true });
+		writeFileSync(join(nativeDir, "win32-console-mode.node"), "// not loaded by any process\n");
+
+		expect(getSourceSelfUpdateBlockers()).toEqual([]);
 	});
 });
