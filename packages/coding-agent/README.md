@@ -135,8 +135,11 @@ For each built-in provider, pi maintains a list of tool-capable models. Configur
 - Xiaomi MiMo Token Plan (China)
 - Xiaomi MiMo Token Plan (Amsterdam)
 - Xiaomi MiMo Token Plan (Singapore)
+- Synthetic
 
 Pi also supports the llama.cpp router server. Configure it with `/login llama.cpp`, manage downloads and loaded models with `/llama`, then select a loaded model with `/model`. See [docs/llama-cpp.md](docs/llama-cpp.md) for setup and usage.
+
+Synthetic uses its OpenAI-compatible endpoint. Set `SYNTHETIC_API_KEY`, then select the recommended alias `synthetic/syn:large:text` (or `synthetic/syn:large:vision` for image input). Pi refreshes Synthetic's `/models` catalog and keeps the current aliases available.
 
 See [docs/providers.md](docs/providers.md) for other provider setup instructions.
 

@@ -103,10 +103,15 @@ pi
 | Xiaomi MiMo Token Plan (China) | `XIAOMI_TOKEN_PLAN_CN_API_KEY` | `xiaomi-token-plan-cn` |
 | Xiaomi MiMo Token Plan (Amsterdam) | `XIAOMI_TOKEN_PLAN_AMS_API_KEY` | `xiaomi-token-plan-ams` |
 | Xiaomi MiMo Token Plan (Singapore) | `XIAOMI_TOKEN_PLAN_SGP_API_KEY` | `xiaomi-token-plan-sgp` |
+| Synthetic | `SYNTHETIC_API_KEY` | `synthetic` |
 
 Reference for environment variables and `auth.json` keys: [`const envMap`](https://github.com/earendil-works/pi-mono/blob/main/packages/ai/src/env-api-keys.ts) in [`packages/ai/src/env-api-keys.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/ai/src/env-api-keys.ts).
 
-#### Auth File
+#### Synthetic
+
+Synthetic is OpenAI-compatible and exposes stable `syn:` aliases. Set `SYNTHETIC_API_KEY` or use `/login synthetic`; then select `synthetic/syn:large:text` for coding/text or `synthetic/syn:large:vision` for vision. Run `pi update --models` to refresh the provider's model catalog.
+
+### Auth File
 
 Store credentials in `~/.pi/agent/auth.json`:
 

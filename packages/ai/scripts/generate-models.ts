@@ -205,6 +205,15 @@ const TOGETHER_TOGGLE_REASONING_LEVEL_MAP = {
 
 const AI_GATEWAY_MODELS_URL = "https://ai-gateway.vercel.sh/v1";
 const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh";
+const SYNTHETIC_BASE_URL = "https://api.synthetic.new/openai/v1";
+const SYNTHETIC_COMPAT: OpenAICompletionsCompat = {
+	supportsStore: false,
+	supportsDeveloperRole: false,
+	supportsReasoningEffort: true,
+	maxTokensField: "max_completion_tokens",
+	supportsStrictMode: true,
+	supportsLongCacheRetention: false,
+};
 const VERTEX_BASE_URL = "https://{location}-aiplatform.googleapis.com";
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const NVIDIA_HEADERS = {
@@ -1063,6 +1072,76 @@ async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 		return models;
 	} catch (error) {
 		console.error("Failed to fetch OpenRouter models:", error);
+		if (generatorOptions.strict) throw error;
+		return [];
+	}
+}
+
+interface SyntheticModel {
+	id: string;
+	name?: string;
+	context_length?: number;
+	max_output_length?: number;
+	input_modalities?: string[];
+	supported_features?: string[];
+	reasoning_parameters?: { efforts?: string[] };
+	pricing?: {
+		prompt?: string | number;
+		completion?: string | number;
+		input_cache_reads?: string | number;
+		input_cache_writes?: string | number;
+	};
+}
+
+function syntheticPrice(value: string | number | undefined): number {
+	const numeric = typeof value === "number" ? value : Number.parseFloat(value?.replace(/^\$/u, "") ?? "0");
+	return Number.isFinite(numeric) ? roundCost(numeric * 1_000_000) : 0;
+}
+
+function syntheticThinkingLevelMap(efforts: readonly string[] | undefined): Model<Api>["thinkingLevelMap"] {
+	if (!efforts || efforts.length === 0) return undefined;
+	const supported = new Set(efforts.map((effort) => effort.toLowerCase()));
+	const map: NonNullable<Model<Api>["thinkingLevelMap"]> = { off: supported.has("none") ? "none" : null };
+	for (const level of ["minimal", "low", "medium", "high", "xhigh", "max"] as const) {
+		map[level] = supported.has(level) ? level : null;
+	}
+	return map;
+}
+
+async function fetchSyntheticModels(): Promise<Model<"openai-completions">[]> {
+	try {
+		console.log("Fetching models from Synthetic API...");
+		const response = await fetch(`${SYNTHETIC_BASE_URL}/models`);
+		if (!response.ok) throw new Error(`Synthetic API returned ${response.status}`);
+		const data = (await response.json()) as { data?: SyntheticModel[] };
+		const models: Model<"openai-completions">[] = [];
+		for (const source of data.data ?? []) {
+			if (!source.supported_features?.includes("tools")) continue;
+			const reasoning = source.supported_features.includes("reasoning") || (source.reasoning_parameters?.efforts?.length ?? 0) > 0;
+			models.push({
+				id: source.id,
+				name: source.name ?? source.id,
+				api: "openai-completions",
+				provider: "synthetic",
+				baseUrl: SYNTHETIC_BASE_URL,
+				reasoning,
+				...(reasoning ? { thinkingLevelMap: syntheticThinkingLevelMap(source.reasoning_parameters?.efforts) } : {}),
+				input: source.input_modalities?.includes("image") ? ["text", "image"] : ["text"],
+				cost: {
+					input: syntheticPrice(source.pricing?.prompt),
+					output: syntheticPrice(source.pricing?.completion),
+					cacheRead: syntheticPrice(source.pricing?.input_cache_reads),
+					cacheWrite: syntheticPrice(source.pricing?.input_cache_writes),
+				},
+				contextWindow: source.context_length ?? 128000,
+				maxTokens: source.max_output_length ?? 65536,
+				compat: SYNTHETIC_COMPAT,
+			});
+		}
+		console.log(`Fetched ${models.length} tool-capable models from Synthetic`);
+		return models;
+	} catch (error) {
+		console.error("Failed to fetch Synthetic models:", error);
 		if (generatorOptions.strict) throw error;
 		return [];
 	}
@@ -2278,9 +2357,10 @@ async function generateModels() {
 	const modelsDevModels = await loadModelsDevData();
 	const openRouterModels = await fetchOpenRouterModels();
 	const aiGatewayModels = await fetchAiGatewayModels();
+	const syntheticModels = await fetchSyntheticModels();
 
 	// Combine models (models.dev has priority)
-	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels].filter(
+	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels, ...syntheticModels].filter(
 		(model) =>
 			!(model.provider === "xai" && XAI_BUILTIN_EXCLUDED_MODEL_IDS.has(model.id)) &&
 			!((model.provider === "opencode" || model.provider === "opencode-go") && model.id === "gpt-5.3-codex-spark"),
