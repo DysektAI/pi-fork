@@ -126,6 +126,26 @@ describe("markdown inline-code path linkify", () => {
 		expect(out).not.toContain(OSC8_PREFIX);
 	});
 
+	it("linkifies a backslash-separated relative path", () => {
+		mkdirSync(join(tempRoot, "nested"), { recursive: true });
+		writeFileSync(join(tempRoot, "nested", "file.ts"), "x");
+
+		const out = getMarkdownTheme(tempRoot).code("nested\\file.ts");
+
+		expect(out).toContain(TOOL_PATH_ANSI);
+		expect(out).not.toContain(MD_CODE_ANSI);
+	});
+
+	it("does not treat a bare drive letter as a line locator", () => {
+		// `C:` alone is not path-ish, and the locator regex must not strip a drive
+		// prefix off an absolute Windows path (see resolveInlineCodePath).
+		const out = getMarkdownTheme(tempRoot).code("C:");
+
+		expect(out).toContain(MD_CODE_ANSI);
+		expect(out).not.toContain(TOOL_PATH_ANSI);
+		expect(out).not.toContain(OSC8_PREFIX);
+	});
+
 	it("colors existing paths with toolPath but omits OSC 8 when hyperlinks are unsupported", () => {
 		setCapabilities({ images: null, trueColor: true, hyperlinks: false });
 		const filePath = writeFile("nolink.txt");

@@ -1367,7 +1367,9 @@ const inlineCodePathExistsCache = new Map<string, boolean>();
 // code (shell commands, function calls, identifiers) is never linkified.
 // Positive results are cached.
 function resolveInlineCodePath(raw: string, cwd: string): string | undefined {
-	const match = raw.match(/^(.+?)((?::\d+(?:-\d+)?)|(?::\d+:\d+)|(?:#L\d+))$/);
+	// A Windows drive prefix (`C:\...`) must not be mistaken for a `:line` locator,
+	// so only strip a trailing locator when it follows more than a bare drive letter.
+	const match = raw.match(/^(.{2,}?)((?::\d+(?:-\d+)?)|(?::\d+:\d+)|(?:#L\d+))$/);
 	const bare = match ? match[1] : raw;
 	if (!bare || /\s/.test(bare)) return undefined;
 	const looksPathish =
@@ -1375,7 +1377,15 @@ function resolveInlineCodePath(raw: string, cwd: string): string | undefined {
 		bare.startsWith("~") ||
 		bare.startsWith("./") ||
 		bare.startsWith("../") ||
+		bare.startsWith(".\\") ||
+		bare.startsWith("..\\") ||
 		bare.includes("/") ||
+		// Windows absolute (`C:\dir\file`) and UNC (`\\server\share`) paths, plus any
+		// backslash-separated relative path. Without this, no absolute Windows path is
+		// ever linkified because none of them contain a forward slash.
+		/^[a-zA-Z]:[\\/]/.test(bare) ||
+		bare.startsWith("\\\\") ||
+		bare.includes("\\") ||
 		/^[\w.-]+\.[a-zA-Z][a-zA-Z0-9]*$/.test(bare);
 	if (!looksPathish) return undefined;
 	const absolutePath = resolvePath(bare, cwd);
