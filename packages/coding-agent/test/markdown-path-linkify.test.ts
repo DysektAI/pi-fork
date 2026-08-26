@@ -126,11 +126,24 @@ describe("markdown inline-code path linkify", () => {
 		expect(out).not.toContain(OSC8_PREFIX);
 	});
 
-	it("linkifies a backslash-separated relative path", () => {
+	// Backslash is a path separator on Windows but a legal filename character on
+	// POSIX, so `nested\file.ts` only names a real file on Windows.
+	it.runIf(process.platform === "win32")("linkifies a backslash-separated relative path", () => {
 		mkdirSync(join(tempRoot, "nested"), { recursive: true });
 		writeFileSync(join(tempRoot, "nested", "file.ts"), "x");
 
 		const out = getMarkdownTheme(tempRoot).code("nested\\file.ts");
+
+		expect(out).toContain(TOOL_PATH_ANSI);
+		expect(out).not.toContain(MD_CODE_ANSI);
+	});
+
+	it("linkifies an absolute path built with the platform separator", () => {
+		// Guards the real bug: on Windows this path contains no forward slash, so the
+		// pre-fix looksPathish check rejected every absolute Windows path.
+		const filePath = writeFile("abs-sep.ts");
+
+		const out = getMarkdownTheme(tempRoot).code(filePath);
 
 		expect(out).toContain(TOOL_PATH_ANSI);
 		expect(out).not.toContain(MD_CODE_ANSI);
