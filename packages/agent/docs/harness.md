@@ -1,98 +1,114 @@
-# AgentHarness v3 — implementation specification
+# AgentHarness — implementation specification
 
-**Status:** complete, pending final audit. Once that audit passes, this document supersedes `agent-harness-spec.md` in full, which itself superseded `harness-v2.md`. Until then, `agent-harness-spec.md` remains authoritative.
-
-**Sources being merged:**
-
-- `agent-harness-spec.md` — the audited base spec ("base" below). Its interpreter, effects boundary, hooks, events, classifier, abort/close, and race catalog carry over with mechanical renames only; do not rewrite them.
-- The storage walkthrough jot ("jot" below, parts 1–9) — the three-store model, pending registers, terminal cleanup, recovery, retention/partitioning, schema evolution, backend stories, API deltas, and the binding decisions in jot part 9.
-- The storage-redesign critique findings, as resolved by jot part 9.
-
-**Global renames applied throughout v3:**
-
-```text
-node / Node*            → entry / *Entry          (continuity with coding-agent)
-slot                    → register
-"storage substrate"     → "Storage"
-StoredValue / valueId   → gone (no values table)
-```
-
----
-
+- [Part 0 — Orientation](#part-0--orientation)
+  - [0.1 What this is](#01-what-this-is)
+  - [0.2 System model](#02-system-model)
+  - [0.3 The three stores](#03-the-three-stores)
+  - [0.4 Worked example — a Slack thread](#04-worked-example--a-slack-thread)
+  - [0.5 Worked example — a crash mid-tool](#05-worked-example--a-crash-mid-tool)
+  - [0.6 Non-goals](#06-non-goals)
+  - [0.7 Notation and source types](#07-notation-and-source-types)
+- [Part 1 — Storage](#part-1--storage)
+  - [1.1 The model](#11-the-model)
+  - [1.2 Identity](#12-identity)
+  - [1.3 Register namespaces](#13-register-namespaces)
+  - [1.4 Transactions](#14-transactions)
+  - [1.5 Queries](#15-queries)
+  - [1.6 Usage ledger](#16-usage-ledger)
+  - [1.7 Backends](#17-backends)
+  - [1.8 Why write-once plus registers](#18-why-write-once-plus-registers)
+- [Part 2 — The conversation tree](#part-2--the-conversation-tree)
+  - [2.1 Entries](#21-entries)
+  - [2.2 Placement](#22-placement)
+  - [2.3 Lanes](#23-lanes)
+  - [2.4 Facts](#24-facts)
+  - [2.5 Branch queries and context](#25-branch-queries-and-context)
+  - [2.6 The branch index](#26-the-branch-index)
+  - [2.7 Forks](#27-forks)
+  - [2.8 Session and repository boundary](#28-session-and-repository-boundary)
+  - [2.9 The precise rewrite](#29-the-precise-rewrite)
+- [Part 3 — The operation state machine](#part-3--the-operation-state-machine)
+  - [3.1 Operations](#31-operations)
+  - [3.2 Operation state — the program counter](#32-operation-state--the-program-counter)
+  - [3.3 Lane state and current-state validity](#33-lane-state-and-current-state-validity)
+  - [3.4 The atomic transition rule](#34-the-atomic-transition-rule)
+  - [3.5 The graph](#35-the-graph)
+  - [3.6 Acceptance](#36-acceptance)
+  - [3.7 Assistant generation](#37-assistant-generation)
+  - [3.8 Tools](#38-tools)
+  - [3.9 Summary generation — compaction and navigation summaries](#39-summary-generation--compaction-and-navigation-summaries)
+  - [3.10 Navigation](#310-navigation)
+  - [3.11 Inbox, queues, deferred writes](#311-inbox-queues-deferred-writes)
+  - [3.12 The checkpoint procedure](#312-the-checkpoint-procedure)
+  - [3.13 Terminal transactions](#313-terminal-transactions)
+- [Part 4 — Execution, recovery, abort, close](#part-4--execution-recovery-abort-close)
+  - [4.1 The interpreter](#41-the-interpreter)
+  - [4.2 The effects boundary](#42-the-effects-boundary)
+  - [4.3 The lane mutation line](#43-the-lane-mutation-line)
+  - [4.4 Restore](#44-restore)
+  - [4.5 Crash positions and recovery policy](#45-crash-positions-and-recovery-policy)
+  - [4.6 Abort](#46-abort)
+  - [4.7 Close — a controlled crash](#47-close--a-controlled-crash)
+  - [4.8 Faults](#48-faults)
+  - [4.9 External finalization](#49-external-finalization)
+- [Part 5 — Public surface](#part-5--public-surface)
+  - [5.1 The lane surface](#51-the-lane-surface)
+  - [5.2 The harness](#52-the-harness)
+  - [5.3 SessionTree](#53-sessiontree)
+  - [5.4 Snapshots and subscription](#54-snapshots-and-subscription)
+  - [5.5 Events](#55-events)
+  - [5.6 Hooks](#56-hooks)
+  - [5.7 Agent-loop building blocks](#57-agent-loop-building-blocks)
+  - [5.8 Telemetry](#58-telemetry)
+- [Part 6 — Future: partitioned retention (Postgres)](#part-6--future-partitioned-retention-postgres)
+- [Part 7 — Schema evolution](#part-7--schema-evolution)
+  - [7.1 The problem](#71-the-problem)
+  - [7.2 Why this design shrinks the problem](#72-why-this-design-shrinks-the-problem)
+  - [7.3 The mechanism: storage version plus migrate-on-open](#73-the-mechanism-storage-version-plus-migrate-on-open)
+  - [7.4 Migrations are total](#74-migrations-are-total)
+  - [7.5 The three strata, restated as policy](#75-the-three-strata-restated-as-policy)
+- [Part 8 — Build order](#part-8--build-order)
+- [Part 9 — Invariants and tests](#part-9--invariants-and-tests)
+  - [9.1 Invariants](#91-invariants)
+  - [9.2 Race catalog](#92-race-catalog)
+  - [9.3 Test tiers](#93-test-tiers)
+- [Appendix A — Glossary](#appendix-a--glossary)
+- [Appendix B — Coding-agent v3-format compatibility](#appendix-b--coding-agent-v3-format-compatibility)
+- [Appendix C — Open questions](#appendix-c--open-questions)
 # Part 0 — Orientation
 
 ## 0.1 What this is
 
-A durable runtime for agent conversations. You hand it a prompt; it talks to a language model, runs tools, and produces a response. The difference from an ordinary agent loop is that **the process can die at any instant** — mid-stream, between a tool call and its result, halfway through a summary — and a new process picks up exactly where the old one stopped, without repeating durable work and without losing anything that had committed.
+A durable runtime for agent conversations. It persists conversation and operation state so interrupted work can resume without repeating settled effects.
 
-It is a library, not a server. One process owns one session at a time.
+## 0.2 System model
 
-## 0.2 Three concepts
+### Session
 
-### Session — the conversation
+A session groups related work and has four parts:
 
-A session is one conversation, stored as a **tree** rather than a list.
+- **Entry tree.** An entry is a message, compaction, branch summary, or application-defined custom entry. Entries are immutable. Each branch is a conversational thread; the shared tree enables branching, compaction, forking, and parallel work while preserving history.
 
-```
-a ── b ── c ── d
-      └── e ── f
-```
+  ```text
+  a ── b ── c ── d
+        └── e ── f
+  ```
 
-A tree, because three features need history that does not move: branching (explore an approach, back out, keep the record), compaction (replace a long prefix with a summary while the original stays queryable), and forking (copy a prefix into a new session). Entries are appended and never modified or deleted.
+- **Facts.** Mutable, namespaced key-value state. Built-ins include the session name and entry labels; applications may store custom facts.
+- **Lanes.** Named cursors into the tree. Every session has `main`. A lane owns its leaf, model configuration, queues, and at most one operation. Additional lanes support Slack threads, subagents, and other parallel work over shared history.
+- **Usage ledger.** Append-only token and cost events for the session.
 
-A session also holds **facts** (session name, entry labels, application key-value state — latest write wins, not part of the tree) and a **usage ledger** (every token and cost event, append-only).
+### Harness and operations
 
-### Lane — a cursor into the conversation
+The session layer manages durable data and exposes typed tree views. The harness drives lanes: it accepts prompts, runs model and tool steps, manages queues, compacts or navigates the tree, and resumes interrupted work. It also owns harness-wide registries of available tools and prompt resources, hooks that intercept and transform execution, passive events that report activity and durable changes, and runtime configuration.
 
-A lane is a **name plus a leaf**: the entry that new work extends. Every session has `main`. Applications create more.
+An **operation** is one accepted unit of lane work: a run, compaction, or navigation. Its immutable metadata records its identity, intent, and starting point; its total current state records its phase, control, queues, and recovery data. Each durable transition replaces the current state. Completion removes the operation state and records the lane's result.
 
-A lane owns its leaf, its configuration (model, thinking level, active tools), its queues, and at most one operation in flight. Lanes run in parallel and share nothing except the tree beneath them.
+### Storage
 
-Why lanes exist: a Slack channel is one session, and each thread is a lane. Threads share the channel's history but take turns independently. Two lanes can sit on the same entry and diverge on their next append — the tree handles that, and no coordination is needed.
+Below the session and harness, `Storage` exposes atomic transactions and queries over three durable forms: immutable entries, mutable registers, and append-only usage rows. Registers form a mutable, namespaced key-value store. Facts live there; internal harness namespaces durably store pending content and lane and operation state needed for crash recovery. In particular, `op.meta` is written once with an operation's metadata, while `op.state` is replaced after each transition with its complete current state. The terminal transaction deletes both and writes `lane.lastResult`. No partial transaction is visible.
 
-**Lane vs fork:** a lane *shares* history; a fork *copies* it for isolation. Use a lane for a thread in a shared conversation, a fork for a subagent, an export, or a what-if.
-
-### Harness — what runs a lane
-
-The harness is the API surface. Per lane: `prompt`, `steer`, `followUp`, `nextRun`, `abort`, `resume`, `compact`, `navigateTree`, plus configuration getters and setters and a tree view. Harness-wide: lane management, tool and resource registries, hooks, events.
-
-An **operation** is one accepted unit of work on a lane — a `run` (prompt to final answer, including all tool calls), a `compaction`, or a `navigation`. One per lane at a time.
-
-## 0.3 Worked example — a Slack thread
-
-A user posts in a channel that already has 400 entries of history. The application creates a lane for the thread, anchored at the channel's current leaf. Entry ids are UUIDv7s (§1.2); examples abbreviate them.
-
-```
-harness.createLane("slack:1719432.0021", at: "0195c8d1-4a2e-7b31-…")
-lane.prompt("what changed in auth last week?")
-```
-
-What happens, in order:
-
-1. **Acceptance.** The harness validates, runs the `before_run` hook, and commits one transaction: the user-message entry, the operation's `op.meta` register, and its first `op.state` — *"I am at a checkpoint, and I need an assistant response."*
-2. **Intent.** It commits a second transaction: *"I am about to make a provider request. The response will be entry `0195c8d1-53a0-7c44-…` and the usage row will be `0195c8d1-53a0-7d18-…`."* Both ids are minted now; nothing has been sent yet.
-3. **The request.** Streaming happens. This is the only part that is not durable.
-4. **Settlement.** One transaction commits the response entry, its usage row, and the next state: *"the response has tool calls; here is the batch plan, with result ids already assigned."*
-5. Tool calls follow the same intent → effect → settlement shape, one pair of commits each.
-6. When the model stops without tool calls, a terminal transaction deletes the operation's registers, records the outcome in `lane.lastResult`, and leaves the lane idle.
-
-Kill the process between any two of those transactions and restart. The harness reads the lane's registers, sees exactly which of those sentences was the last one committed, and continues. If it died in step 3, it knows a request may have been billed and may or may not have produced output — that is the one genuinely uncertain window in the whole system, and there is a stated policy for it.
-
-Meanwhile a second thread in the same channel is running its own lane, over the same 400 entries of shared history, with no coordination between them.
-
-## 0.4 Worked example — a crash mid-tool
-
-```
-lane.prompt("delete the stale migrations and run the test suite")
-```
-
-The model returns two tool calls. The harness commits the batch plan, then commits `call 0 is about to execute, with these exact arguments, and it declares itself unsafe to replay`. The tool starts deleting files. The process is killed.
-
-On restart the harness reads one register and finds `calls[0].status = "effect_pending", replay = "never"`. It does not re-run the deletion. It appends a synthetic error result under the result id that was reserved before the effect started, marks the call complete, and continues to call 1. The conversation stays coherent — every tool call has a result — and nothing ran twice.
-
-Had the tool declared `replay: "safe"` (a read, a query), the harness would have re-executed it with the persisted arguments instead.
-
-## 0.5 The three stores
+## 0.3 The three stores
 
 Everything in Parts 1–5 follows from these.
 
@@ -104,9 +120,9 @@ registers      current mutable state — namespaced typed cells, overwrite or de
 usage ledger   cost history — append-only rows
 ```
 
-*Every payload is in an entry, a register, or the ledger; there is no third place.* An entry is the complete conversation record — placement and payload in one row. A register holds its current typed value directly; overwriting discards the old value, and deletion removes the key. Content that durably exists before it has a place in the tree (queued input, deferred writes) waits in a `pending.entry` register and becomes an entry in the transaction that places it. Per-backend projections — branch index, full-text search, stats, partition inventory — are rebuildable from the three stores and carry no authority.
+*Every payload is in an entry, a register, or the ledger; there is no third place.* An entry is the complete conversation record — placement and payload in one row. A register holds its current typed value directly; overwriting discards the old value, and deletion removes the key. Content that durably exists before it has a place in the tree (queued input, deferred writes) waits in a `pending.entry` register and becomes an entry in the transaction that places it. Per-backend projections — branch index, full-text search, stats — are rebuildable from the three stores and carry no authority.
 
-**2. Atomic transactions.** A transaction is a set of entry inserts, usage inserts, and register writes (set or delete), committed all-or-none with consecutive sequence numbers. There is no crash state inside a transaction. This is the only write primitive.
+**2. Atomic transactions.** A transaction is a set of entry inserts, usage inserts, and register writes (set or delete), committed all-or-none with strictly increasing sequence numbers. There is no crash state inside a transaction. This is the only write primitive.
 
 **3. The durable program counter.** After every step, the harness overwrites one register — `op.state/{operationId}` — with the *complete* current state of the operation. Recovery does not replay a journal or infer position from what is missing; it reads that register and switches on it. The state is *total* — it never depends on a previous state. Small captured values (configuration, stream options, retry policy) are inline; large stable payloads live in sibling `op.*` registers or are named by id. When the operation ends, the terminal transaction deletes its registers: a finished session holds exactly the conversation, the ledger, and a handful of lane and fact registers. There is no dead state to collect.
 
@@ -120,14 +136,82 @@ commit:  output + usage + next state                           ← settlement
 
 Hooks follow their replay contract instead: a result becomes durable in the transaction that consumes it, and a crash before that transaction may rerun the hook. Thus every external effect can still happen without durable settlement. Provider/tool intents make that uncertainty explicit where replay policy depends on it; idempotent hooks accept it as a non-goal.
 
+## 0.4 Worked example — a Slack thread
+
+A user posts in a channel that already has 400 entries of history. The application creates a lane for the thread, anchored at the channel's current leaf. Entry ids are UUIDv7s (§1.2); examples abbreviate them.
+
+```
+harness.createLane("slack:1719432.0021", at: "0195c8d1-4a2e-7b31-…")
+lane.prompt("what changed in auth last week?")
+```
+
+What happens, in order:
+
+1. **Acceptance.** The harness validates, runs the `before_run` hook, and commits one transaction: the user-message entry, the operation's `op.meta` register, and its first `op.state` — *"I am at a checkpoint, and I need an assistant response."*
+2. **Intent.** After an internal ready-state commit, it commits the request intent: *"I am about to make a provider request. The response will be entry `0195c8d1-53a0-7c44-…` and the usage row will be `0195c8d1-53a0-7d18-…`."* Both ids are minted now; nothing has been sent yet.
+3. **The request.** Streaming happens. This is the only part that is not durable.
+4. **Settlement.** One transaction commits the response entry, its usage row, and the next state: *"the response has tool calls; here is the batch plan, with result ids already assigned."*
+5. Tool calls follow the same intent → effect → settlement shape, one pair of commits each.
+6. When the model stops without tool calls, a terminal transaction deletes the operation's registers, records the outcome in `lane.lastResult`, and leaves the lane idle.
+
+As a trace (ids abbreviated; every `TX[...]` is one atomic commit):
+
+```text
+TX[ insert entry n1 (user msg), upsert op.meta/O, upsert op.state/O = checkpoint,
+    upsert lane.leaf = n1, upsert lane.state = { currentOperationId: O } ]
+TX[ upsert op.state/O = assistant ready (config snapshot) ]
+TX[ upsert op.state/O = effect_pending (reserves response n2, usage u1) ]
+… provider streams …                                  ← the uncertain window
+TX[ insert entry n2, insert usage u1, upsert lane.leaf = n2,
+    upsert op.state/O = tools (result id n3 reserved) ]
+TX[ upsert op.tool_args/O:s1:0, upsert op.state/O = call 0 effect_pending ]
+… tool runs …
+TX[ insert entry n3, upsert lane.leaf = n3, upsert op.state/O = checkpoint ]
+… second turn: ready · intent · stream · settle (n4, u2) …
+TX[ delete op.meta/O, op.state/O, op.tool_args/O:*,
+    upsert lane.lastResult = { O, completed, n4 },
+    upsert lane.state = { currentOperationId: null } ]
+```
+
+Kill the process between any two of those transactions and restart. The harness reads the lane's registers, sees exactly which of those sentences was the last one committed, and continues. If it died in step 3, it knows a request may have been billed and may or may not have produced output — that is the one genuinely uncertain window in the whole system, and there is a stated policy for it.
+
+Meanwhile a second thread in the same channel is running its own lane, over the same 400 entries of shared history, with no coordination between them.
+
+## 0.5 Worked example — a crash mid-tool
+
+```
+lane.prompt("delete the stale migrations and run the test suite")
+```
+
+The model returns two tool calls. The harness commits the batch plan, then commits `call 0 is about to execute, with these exact arguments, and it declares itself unsafe to replay`. The tool starts deleting files. The process is killed.
+
+```text
+TX[ insert entry n2 (assistant, 2 calls), insert usage u1, upsert lane.leaf = n2,
+    upsert op.state/O = tools (result ids n3, n4 reserved) ]
+TX[ upsert op.tool_args/O:s1:0, upsert op.state/O = call 0 effect_pending,
+                                                    replay: "never" ]
+… tool deletes files …  ← CRASH
+```
+
+On restart the harness reads one register and finds `calls[0].status = "effect_pending", replay = "never"`. It does not re-run the deletion. It appends a synthetic error result under the result id that was reserved before the effect started, marks the call complete, and continues to call 1:
+
+```text
+TX[ insert entry n3 (synthetic "interrupted" result), upsert lane.leaf = n3,
+    upsert op.state/O = call 0 completed ]
+```
+
+The conversation stays coherent — every tool call has a result — and nothing ran twice.
+
+Had the tool declared `replay: "safe"` (a read, a query), the harness would have re-executed it with the persisted arguments instead.
+
 ## 0.6 Non-goals
 
 - **Exactly-once external effects.** See above. Hooks with their own side effects must be idempotent, keyed by operation id.
 - **Provider stream resumption.** Partial streams are process-local, never persisted. A settled response is persisted *completely* before anything classifies it.
 - **Multiple writers.** One process per session. The serving layer routes accordingly, and the SQLite backend enforces it with a fenced lease (§1.7). Lanes cover the workload that looks like multi-writer.
 - **Replication.** A session lives in one place.
-- **Durable write history.** Registers hold only current values: an overwritten register is gone, and there is no `getLog` or history table. Order-of-write assertions in tests use an instrumented storage decorator around `commit()` (Part 9); production auditing belongs to the telemetry layer (§5.8).
-- **Compliance deletion through retention expiry.** Partition expiry is TTL and cost control, not erasure: `retainedTail` copies old messages forward into newer compaction entries, and summaries derive from old content. Compliance-grade "erase this" uses the precise-rewrite path (Part 6).
+- **Durable write history.** Registers hold only current values: an overwritten register is gone, and no API or table exposes write history. Order-of-write assertions in tests use an instrumented storage decorator around `commit()` (Part 9); production auditing belongs to the telemetry layer (§5.8).
+- **Deletion as a runtime feature.** Entries and usage rows are never deleted: compaction changes provider context, not storage, and terminal cleanup deletes only registers. Note that `retainedTail` copies old messages forward into newer compaction entries and summaries derive from old content, so compaction is not erasure either. Compliance-grade "erase this" is the administrative precise rewrite (§2.9), the sole sanctioned exception.
 
 ## 0.7 Notation and source types
 
@@ -138,7 +222,8 @@ Hooks follow their replay contract instead: a result becomes durable in the tran
 
 Source type provenance:
 
-- `AgentMessage`, `AgentTool`, `AgentToolResult`, `AgentEventSink`, `QueueMode`, and `ThinkingLevel`: `packages/agent/src/types.ts`.
+- `AgentMessage`, `AgentTool`, `AgentToolResult`, `QueueMode`, and `ThinkingLevel`: `packages/agent/src/types.ts`.
+- `AgentEventSink`: `packages/agent/src/agent-loop.ts`.
 - `Skill`, `PromptTemplate`, `AgentHarnessResources` (`Resources` below), `AgentHarnessTool`, `AgentHarnessStreamOptions`, and `AgentHarnessStreamOptionsPatch`: `packages/agent/src/harness/types.ts`.
 - `Model`, `Models`, `Usage`, `RetryPolicy`, `StopReason`, `AssistantMessage`, `ImageContent`, provider messages, stream options, and deferred handles: `packages/ai`.
 - `CompactionSettings`, `CompactionPreparation`, `CompactResult`, `BranchPreparation`, and `BranchSummaryResult`: `packages/agent/src/harness/compaction/`. Existing preparation and split-turn algorithms remain the implementation starting point unless this document explicitly changes them.
@@ -152,23 +237,10 @@ type SettledAssistantMessage = AssistantMessage & {
   stopReason: Exclude<StopReason, "pending">;
 };
 
-/** Added to packages/ai: a synchronous registry lease that captures the exact
-    provider/model and Models auth resolver without resolving auth yet. */
-interface ModelRequestLease {
-  readonly model: Model;
-  stream(context: Context, options?: ModelsApiStreamOptions<Api>):
-    AssistantMessageEventStream;
-  streamSimple(context: Context, options?: ModelsSimpleStreamOptions):
-    AssistantMessageEventStream;
-  fetchDeferred(handle: DeferredHandle, options?: ModelsDeferredFetchOptions):
-    Promise<AssistantMessage>;
-  cancelDeferred(handle: DeferredHandle, options?: ModelsDeferredCancelOptions):
-    Promise<void>;
-}
-// Models.lease(provider: string, modelId: string): ModelRequestLease | undefined
+// Provider dispatch resolves the durable { provider, modelId } identity
+// through Models at request time, which also applies auth. A missing or
+// swapped registry entry fails the request in-band, like an unknown tool.
 ```
-
-There are no orchestration "records" in this system. Every durable thing is an **entry**, a **register**, or a **usage row**.
 
 ---
 
@@ -216,36 +288,19 @@ interface UsageRow {
 }
 ```
 
-**Why placement and payload are one row.** The superseded design split content ("values") from placement ("nodes") because they can have different birth times: queued input has content at enqueue and placement much later; an assistant response needs its id fixed *before* the content exists. The split is gone; the differing birth times remain, and two reservation regimes cover them (§2.2). Content that is durable before placement is *current mutable state* and waits in a `pending.entry` register keyed by its reserved entry id; the placement transaction writes the complete entry and deletes the register. An id that must exist before its content — an assistant response, a tool result — is just a minted string inside `op.state`, and settlement inserts the complete entry. Every read returns the whole entry with no join, no `valueId`, and no way for content to exist without an owner.
+## 1.2 Identity
 
-**Registers hold values, not pointers.** A register's value is the current typed state itself, never an id pointing at an immutable state value. Overwriting a register discards the previous value; nothing accumulates and there is no history to fold (§1.8). Deleting a register removes the key entirely and is a first-class write, distinct from storing JSON `null`, which remains a legal value where a namespace's type permits it (`lane.leaf` at the root, `fact.custom`).
-
-## 1.2 Identity and partitions
-
-Every id storage stores — entry ids, usage ids, and every reserved id that will become one — is a **UUIDv7**, minted through the session's id generator (§2.8); the sole exception is imported legacy-format ids, preserved verbatim (Appendix C). A UUIDv7 begins with 48 bits of Unix milliseconds: the first 12 hex characters of the id *are* a timestamp, and that timestamp, truncated to the partition period, *is* the id's partition assignment. There are no partition columns anywhere — not on entries, not on ledger rows, not in any register value. The period length (monthly in every example) is a deployment property of the partitioned backend; Memory, JSONL, and SQLite never partition.
-
-What the embedded prefix buys:
-
-- **Every reference is self-describing.** A `parentId`, a `lane.leaf` value, a `fact.label` key, an id inside `op.state` JSON — any of them can be classified against the partition retirement inventory by reading its prefix, with no lookup.
-- **Native partition pruning.** Postgres compares `uuid` bytewise and UUIDv7 sorts in time order, so `PARTITION BY RANGE (id)` works directly, with period-boundary UUIDs (zeroed tails) as bounds. The primary key stays `(session_id, id)`, and a point lookup prunes to one partition from the id itself (§1.7).
-- **The cost.** Ids leak their creation period to applications. Accepted: the alternative is a denormalized partition column on every row, plus no answer at all for references held inside register values.
+Every id — entry, usage, and every reserved id — is a **UUIDv7** from the session's id generator (§2.8); legacy imports re-mint to conform (Appendix B). The first 48 bits are the mint time, so every reference is self-describing and time-sortable. Cost accepted: ids leak creation time. (A future partitioned Postgres backend would build on this prefix — informative Part 6.)
 
 Minting rules:
 
-1. An id is minted with `now()` **at reservation**. For born-placed entries — the hot path — reservation and placement are the same transaction, so the prefix equals the placement date.
-2. **Followers inherit the leader's timestamp.** Tool-result ids are minted with their assistant entry id's 48-bit timestamp (fresh random bits keep them unique), so an assistant and its tool results share a partition by construction, even across a midnight or month boundary. This is a deliberate, documented deviation from "UUID timestamp = wall clock". It exists because dropping a partition must never orphan half of a call/result exchange: a retained tool result whose assistant call is gone heads a context every provider rejects.
-3. **Synthetic settlement needs no special case.** Crash recovery and force-expiry write under already-reserved ids (§4.5), so synthetic responses and results land in the partition their intent promised.
-4. **Late placement pins.** A `nextRun` message minted in January and consumed in April is placed as a January-partition entry — exact, but it means unplaced reservations pin their partitions. All such reservations are enumerable from hot registers (`pending.entry` keys and the reserved ids inside open `op.state` values are UUIDv7s: decode, take the minimum), so drop preflight is a bounded register scan. Retention policy for abandoned reservations is Part 6.
+1. Ids are minted with `now()` **at reservation**. Direct appends place in the same transaction; assistant/tool ids trail placement by at most the request duration.
+2. **Tool-result ids inherit their assistant id's timestamp** (`idGenerator.next(timestampMs?)`, fresh random tail), so a call-and-results group is time-cohesive under id order even across a midnight boundary.
+3. Synthetic settlements write under already-reserved ids (§4.5) — no special case.
 
-Traversal discrimination is exact by construction:
+**Opaque payloads** — custom entry `data`, `details`, `fact.custom` values, message text, hook `resumeData` — may embed entry ids. The harness never tracks those references and they may go stale; copy content, don't reference it.
 
-```text
-parent entry exists                               → continue
-parent missing, id prefix in a retired period     → retention boundary — clean stop
-parent missing, id prefix in a live period        → corruption — loud
-```
-
-Memory, JSONL, and SQLite never retire periods themselves, so with an empty retired-range set — the default — the middle case is unreachable there and a missing parent is always corruption. The rules are still core — branch scans and forks must implement the boundary stop (§2.5, §2.7) — but the middle case is exercised only where the retired-range inventory (§6.4) is non-empty: the future Postgres backend (§1.7), sessions truncated by retention compaction or fork import, and the conformance suite's abstract retired-range set (Part 9).
+**Absolutes.** Within a session, entries and usage rows are never deleted — the precise rewrite (§2.9) is the sole exception. A missing parent is always corruption.
 
 ## 1.3 Register namespaces
 
@@ -314,16 +369,21 @@ pending.entry      lives until its content is placed or cancelled
 - Operation-owned `pending.entry` registers still unconsumed at the end (remaining inbox items and abort-drained items) are deleted by the terminal transaction — a consumed item's register dies in its placement transaction; lane-owned ones (`pendingNextRun`) outlive operations and die when consumed or cancelled (§3.11).
 - `lane.lastResult` is written only by terminal transactions and overwritten by the next one on its lane — one bounded register per lane, forever. Recovery never reads it; it exists so an application that accepted an operation, crashed, and reopened can still learn its outcome (§3.13).
 - Deleting a fact removes its register. Storing JSON `null` in `fact.custom` is a different, legal state; there are no tombstones.
-- There is no `queue.disposition` namespace. It existed solely so a repeated `cancelQueued` could answer `already_cleared`, at the cost of one immortal register per cancelled item. Triage is now: pending → `cancelled`; entry exists → `already_consumed`; else → `not_found` (§3.11). Clients that retry a lost cancel treat `not_found` as success.
+- Cancellations leave no trace: `cancelQueued` triages as pending → `cancelled`, entry exists → `already_consumed`, else → `not_found` (§3.11). A client retrying a lost cancel treats `not_found` as success.
 
 ## 1.4 Transactions
 
 ```ts
+/** Mapped discriminated union: the namespace forces the value type. */
+type RegisterSetWrite = {
+  [N in RegisterNamespace]: { kind: "register"; op: "set"; namespace: N;
+                              key: string; value: RegisterValues[N] }
+}[RegisterNamespace];
+
 type Write =
   | { kind: "entry"; entry: Omit<Entry, "seq" | "timestamp"> }
   | { kind: "usage"; row: Omit<UsageRow, "seq"> }
-  | { kind: "register"; op: "set"; namespace: RegisterNamespace; key: string;
-      value: JsonValue }
+  | RegisterSetWrite
   | { kind: "register"; op: "delete"; namespace: RegisterNamespace; key: string };
 
 interface Transaction { writes: Write[] }
@@ -334,7 +394,7 @@ interface CommitResult { firstSeq: number; seqs: number[]; timestamp: number }
 Rules:
 
 1. A transaction commits **all-or-none**. There is no observable state in which some of its writes exist and others do not.
-2. Writes receive **consecutive** `seq` values in the order given. `seq` is monotonic session-wide across all lanes and all write kinds. A register `set` stamps the register with its assigned `seq`.
+2. Writes receive **strictly increasing** `seq` values in the order given; gaps are legal, within and between transactions. `seq` is monotonic session-wide across all lanes and all write kinds. A register `set` stamps the register with its assigned `seq`.
 3. Within a transaction, writes apply in order: an entry may name a parent created earlier in the same transaction; a register value may reference entry or usage ids created earlier in the same transaction. A placement transaction inserts the complete entry and deletes its `pending.entry` register together (§2.2) — there is never a moment where both exist.
 4. Entry and usage ids share one session-wide id namespace. Writing either kind under any existing id is **corruption**, not an update.
 5. A register `set` with the same `(namespace, key)` replaces the current value; `delete` removes the key; a later `set` recreates it. No history is retained. A `delete` naming an absent key is a no-op, so public deletions such as clearing an unset label stay legal.
@@ -354,11 +414,15 @@ interface Storage {
 
   getRegister<N extends RegisterNamespace>(namespace: N, key: string):
     Promise<Register<N> | undefined>;
-  listRegisters<N extends RegisterNamespace>(namespace: N): Promise<Register<N>[]>;
+  /** keyPrefix is an indexed prefix listing over (namespace, key); terminal
+      cleanup's op.* prefix scans use it (§3.13). */
+  listRegisters<N extends RegisterNamespace>(namespace: N, keyPrefix?: string):
+    Promise<Register<N>[]>;
 
   scanBranch(q: BranchScan): Promise<Entry[]>;            // §2.5
   scanBranchStructure(q: BranchScan): Promise<EntryStructure[]>;
   scanEntries(q: EntryScan): Promise<Entry[]>;            // session-wide tree inventory
+  scanUsage(q: UsageScan): Promise<UsageRow[]>;           // seq-ranged ledger read (§1.6)
   getStats(): Promise<SessionStats>;                      // maintained projection (§1.6)
 
   close(): Promise<void>;
@@ -372,9 +436,14 @@ interface EntryScan {
   fromSeq?: number; toSeq?: number;
   order?: "asc" | "desc"; limit?: number;
 }
+
+interface UsageScan {
+  fromSeq?: number; toSeq?: number;
+  order?: "asc" | "desc"; limit?: number;
+}
 ```
 
-There is deliberately no cross-namespace register scan, no ledger scan, and no durable write log. Restore, facts, forks, and execution follow exact ids and keys; entry inventory uses `scanEntries`; totals use the stats projection (§1.6); test-order assertions wrap `commit()` with the instrumented-storage decorator (Part 9); production auditing belongs to telemetry (§5.8).
+There is deliberately no cross-namespace register scan and no durable write log. Restore, facts, forks, and execution follow exact ids and keys; entry inventory uses `scanEntries`; ledger reads use `scanUsage`; totals use the stats projection (§1.6); test-order assertions wrap `commit()` with the instrumented-storage decorator (Part 9); production auditing belongs to telemetry (§5.8).
 
 Recovery and execution reads must be index-driven and bounded. They may not infer state from an absent value, and there is no register history to fold. Exact dereference is allowed: one current state may name a bounded set of entries and registers, fetched in one batch without order-dependent reduction. Public inventory and debugging APIs may intentionally read more than a hot path; their `limit`/pagination behavior is explicit at the `SessionTree` layer.
 
@@ -390,13 +459,13 @@ Every settled provider attempt writes one `UsageRow` — successful, failed, ret
 ```
 
 - `entryId` names the entry the cost belongs to, when there is one. Structural (summary) attempts that fail before producing an entry, and standalone adjustments, have none.
-- `adjustment: true` marks a caller-supplied reconciliation (`recordUsage`, §5.1) rather than a provider report. The format-3 import writes one aggregate adjustment row (Appendix C).
-- Provider-attempt usage ids are UUIDv7s reserved in the intent commit (§1.2), so a settlement writes under exactly the id its intent promised. Adjustment rows, tool-reported usage rows, and import aggregates mint their ids at commit; nothing reserves them.
-- `getStats()` is a maintained projection over the ledger and the entry count. After every commit it equals the ledger sum; the conformance suite asserts this (Part 9). There is no ledger scan: totals come from the projection, and individual rows reach the application through the `usage` event at commit time (§5.5).
+- `adjustment: true` marks a caller-supplied reconciliation (`recordUsage`, §5.1) rather than a provider report. The format-3 import writes one aggregate adjustment row (Appendix B).
+- Provider-attempt usage ids are UUIDv7s reserved in the intent commit (§1.2), so a settlement writes under exactly the id its intent promised. Adjustment rows, tool-reported usage rows, hook-supplied compaction/navigation usage rows (§3.9, §3.10), and import aggregates mint their ids at commit; nothing reserves them.
+- `getStats()` is a maintained projection over the ledger and the message-entry count — `messageCount` counts `message` entries only, not compactions, summaries, or custom entries. After every commit it equals the ledger sum; the conformance suite asserts this (Part 9). Individual rows reach the application through the `usage` event at commit time (§5.5), and `scanUsage` (§1.5) reads them back by seq range — a consumer that persists the greatest event `seq` it applied catches up after downtime with `scanUsage({ fromSeq })`. Recovery never reads the ledger.
 
 ## 1.7 Backends
 
-Three encodings of one model ship now — Memory, JSONL, SQLite — and all three pass the same conformance suite (Part 9). Postgres is a planned fourth; it appears here because its native partitioning shapes the retention design (Part 6). Each backend records the session's `storageVersion` (Part 7): a JSONL header field, a SQLite/Postgres catalog column. Memory sessions are always current.
+Three encodings of one model ship now — Memory, JSONL, SQLite — and all three pass the same conformance suite (Part 9). Each backend records the session's `storageVersion` (Part 7): a JSONL header field, a SQLite catalog column. Memory sessions are always current. A possible fourth backend — partitioned Postgres — is sketched informatively in Part 6; nothing here depends on it.
 
 ### Memory
 
@@ -424,14 +493,14 @@ The file is not the state; it is the **replay recipe** for the Memory maps above
 {"kind":"register","op":"delete","seq":131,"namespace":"op.state","key":"op_9"}
 ```
 
-- This is format 4. The incompatible format-4 code currently in the source tree is unfinished and is replaced in place; no migration for it is required. Coding-agent format 3 remains supported (Appendix C).
-- Open replays lines in order into the Memory maps: entries and usage rows accumulate; a later register `set` overwrites the key, `delete` removes it. That is *decoding*, not recovery logic. Open verifies persisted sequence continuity and timestamps and never regenerates committed timestamps. All queries then run in RAM.
+- This is format 4. The incompatible format-4 code currently in the source tree is unfinished and is replaced in place; no migration for it is required. Coding-agent format 3 remains supported (Appendix B).
+- Open replays lines in order into the Memory maps: entries and usage rows accumulate; a later register `set` overwrites the key, `delete` removes it. That is *decoding*, not recovery logic. Open verifies persisted sequence monotonicity — strictly increasing, gaps legal (§1.4) — and timestamps, and never regenerates committed timestamps. All queries then run in RAM.
 - **A torn final line is discarded whole**, including every element of an array, and is truncated before new writes are admitted. This is what makes "no crash prefix inside a transaction" true here.
 - A malformed *interior* line, or a complete-but-invalid transaction, is corruption. The one exception: superseded old-shape register lines from before a schema migration decode leniently as keyed raw JSON during replay (Part 7); compaction retires them.
 - Durability is process-crash level: a resolved `commit()` survives process death. No fsync promise.
 - Optional: retain `(offset, length)` per entry and load payloads lazily, keeping only structure and registers resident. Do this only if profiling demands it.
 
-**Snapshot compaction.** In SQLite a register `set` is an in-place upsert — a 30-turn run leaves one `op.state` row and then zero. In JSONL every `set` appends, so the same run appends ~10 full `op.state` lines, all dead the moment the terminal `delete` line lands: the file grows with *write history* even though the logical state does not. The fix is rewriting the file as `header + current entries + current registers + usage rows`, via temp file + atomic rename. For a four-entry run:
+**Snapshot compaction.** In SQLite a register `set` is an in-place upsert — a 30-turn run leaves one `op.state` row and then zero. In JSONL every `set` appends, so the same run appends ~10 full `op.state` lines, all dead the moment the terminal `delete` line lands: the file grows with *write history* even though the logical state does not. The fix is rewriting the file as `header + current entries + current registers + usage rows`, via temp file + atomic rename; surviving lines keep their original `seq` values, and the gaps the dropped lines leave are legal (§1.4), so compaction needs no renumbering machinery. For a four-entry run:
 
 ```text
 before compaction:  ~10 transaction lines, ~27 writes — op.state revisions,
@@ -443,37 +512,41 @@ When to compact: on open when the dead-bytes ratio crosses a threshold; optional
 
 ### SQLite
 
+**One database file per session.** The file is the session, exactly as a JSONL
+file is. Corruption is confined to one session, deletion is unlinking a file, and
+SQLite's one-writer-per-file rule coincides with the design's
+one-writer-per-session rule by construction.
+
 ```sql
-entries(session_id, id TEXT, parent_id TEXT, seq INTEGER, type TEXT, custom_type TEXT,
-        timestamp INTEGER, payload TEXT, PRIMARY KEY (session_id, id)) WITHOUT ROWID;
-CREATE INDEX ix_entry_parent ON entries(session_id, parent_id);
-CREATE INDEX ix_entry_seq ON entries(session_id, seq, type);
+entries(id TEXT PRIMARY KEY, parent_id TEXT, seq INTEGER, type TEXT,
+        custom_type TEXT, timestamp INTEGER, payload TEXT) WITHOUT ROWID;
+CREATE INDEX ix_entry_parent ON entries(parent_id);
+CREATE INDEX ix_entry_seq ON entries(seq, type);
 
-registers(session_id, namespace TEXT, key TEXT, seq INTEGER, value TEXT,
-          PRIMARY KEY (session_id, namespace, key));
+registers(namespace TEXT, key TEXT, seq INTEGER, value TEXT,
+          PRIMARY KEY (namespace, key));
 
-usage_ledger(session_id, id TEXT, seq INTEGER, entry_id TEXT, adjustment INTEGER,
-             usage TEXT, details TEXT, PRIMARY KEY (session_id, id)) WITHOUT ROWID;
-CREATE INDEX ix_usage_seq ON usage_ledger(session_id, seq);
+usage_ledger(id TEXT PRIMARY KEY, seq INTEGER, entry_id TEXT, adjustment INTEGER,
+             usage TEXT, details TEXT) WITHOUT ROWID;
+CREATE INDEX ix_usage_seq ON usage_ledger(seq);
 
 -- Private branch index (§2.6). Not registers; no equivalent in the other backends.
-branch_entries(session_id, branch_id TEXT, entry_id TEXT, entry_seq INTEGER, entry_type TEXT,
-               PRIMARY KEY (session_id, branch_id, entry_id)) WITHOUT ROWID;
+branch_entries(branch_id TEXT, entry_id TEXT, entry_seq INTEGER, entry_type TEXT,
+               PRIMARY KEY (branch_id, entry_id)) WITHOUT ROWID;
 -- Ordered scans. entry_seq must follow branch_id directly or ORDER BY needs a
 -- temp b-tree; entry_id and entry_type trail so the index covers id-only reads.
-CREATE INDEX ix_be_seq  ON branch_entries(session_id, branch_id, entry_seq, entry_id, entry_type);
+CREATE INDEX ix_be_seq  ON branch_entries(branch_id, entry_seq, entry_id, entry_type);
 -- Type-filtered scans.
-CREATE INDEX ix_be_type ON branch_entries(session_id, branch_id, entry_type, entry_seq, entry_id);
-CREATE INDEX ix_be_entry ON branch_entries(session_id, entry_id);
-branch_meta(session_id, branch_id TEXT, tip_entry_id TEXT, tip_seq INTEGER,
-            base_branch_id TEXT, base_seq INTEGER,
-            PRIMARY KEY (session_id, branch_id));
-CREATE UNIQUE INDEX ix_bm_tip ON branch_meta(session_id, tip_entry_id);
+CREATE INDEX ix_be_type ON branch_entries(branch_id, entry_type, entry_seq, entry_id);
+CREATE INDEX ix_be_entry ON branch_entries(entry_id);
+branch_meta(branch_id TEXT PRIMARY KEY, tip_entry_id TEXT, tip_seq INTEGER,
+            base_branch_id TEXT, base_seq INTEGER);
+CREATE UNIQUE INDEX ix_bm_tip ON branch_meta(tip_entry_id);
 
-sessions(session_id, created_at, parent_session_id, storage_version, metadata);
-session_stats(session_id, message_count, usage_payload);
-session_sequences(session_id, next_seq);
-writer_leases(session_id, owner_id TEXT, fence INTEGER, expires_at_ms INTEGER);
+-- One row each: the file is the session.
+session(created_at, parent_session_id, storage_version, metadata,
+        message_count, usage_payload, next_seq);
+writer_lease(owner_id TEXT, fence INTEGER, expires_at_ms INTEGER);
 ```
 
 One `commit()` is one SQL transaction: insert entries, insert ledger rows, upsert or delete registers, maintain the branch index, bump `session_stats`. Never an UPDATE or DELETE on an entry or ledger row; mutability is confined to registers, the branch index (`branch_meta` tips and bases), stats, sequences, the session catalog row, and leases.
@@ -485,13 +558,15 @@ lock; if another writer committed in between, SQLite fails that upgrade — and
 stale snapshot. The only recovery is rollback and full retry.
 
 Every commit has this shape, not just a few. Allocating the sequence range reads
-`session_sequences.next_seq` and then writes it, so a read precedes a write in every
+the session row's `next_seq` and then writes it, so a read precedes a write in every
 transaction the system performs. Branch creation (§2.6) adds a second instance,
 reading the newest compaction before inserting. `BEGIN IMMEDIATE` takes the write
 lock up front and avoids an unrecoverable stale-snapshot upgrade, so there is no case
 where a deferred `BEGIN` is the right choice here.
 
-**`writer_leases` enforces the single-writer rule.** Expiring fenced ownership:
+**`writer_lease` enforces the single-writer rule.** WAL happily lets two
+processes alternate writes to one file, which is exactly the interleaving the
+design forbids — so per-session files do not remove the need for the lease. Expiring fenced ownership:
 `open()` acquires the claim, storage renews it on appends and while idle, and close
 stops renewal after the queue drains and deletes only its matching `(owner_id,
 fence)` pair — so a stale owner cannot release the replacement that succeeded it.
@@ -499,15 +574,6 @@ This is what makes "one process owns one session" an enforced property rather th
 a convention the serving layer is trusted to uphold. Memory and JSONL have no
 equivalent and rely on process ownership; a JSONL session opened twice is corrupt
 and undetected.
-
-**Writer scope is per database file, not per session.** WAL mode permits exactly one
-writer per file. Because these tables are keyed by `session_id`, several sessions may
-share a file, and the design's one-writer-per-session rule does not by itself make
-writes uncontended. Choose deliberately:
-
-- *One file per session* — the single-writer claim becomes literally true, and there
-  is no cross-session contention. Preferred unless something forces otherwise.
-- *One file for many sessions* — correct, but all sessions share SQLite's one-writer queue. Use only when that contention is acceptable.
 
 Atomicity itself needs no special handling. A multi-write transaction is all-or-none
 by the file format: WAL frames become visible only when the commit record lands, so a
@@ -518,8 +584,8 @@ Each physical segment of `scanBranch` uses one JOIN; §2.6 combines segment rang
 ```sql
 SELECT e.id, e.parent_id, e.seq, e.type, e.custom_type, e.timestamp, e.payload
 FROM branch_entries b
-CROSS JOIN entries e ON e.session_id = b.session_id AND e.id = b.entry_id
-WHERE b.session_id = ? AND b.branch_id = ? AND b.entry_seq > ? AND b.entry_seq <= ?
+CROSS JOIN entries e ON e.id = b.entry_id
+WHERE b.branch_id = ? AND b.entry_seq > ? AND b.entry_seq <= ?
 ORDER BY b.entry_seq;
 ```
 
@@ -528,8 +594,8 @@ to itself the planner may drive from `entries`, scan the table, and sort through
 temporary b-tree. Assert the plan in a test:
 
 ```
-SEARCH b USING COVERING INDEX ix_be_seq (session_id=? AND branch_id=? AND entry_seq>?)
-SEARCH e USING PRIMARY KEY (session_id=? AND id=?)
+SEARCH b USING COVERING INDEX ix_be_seq (branch_id=? AND entry_seq>?)
+SEARCH e USING PRIMARY KEY (id=?)
 ```
 
 Any plan containing `USE TEMP B-TREE FOR ORDER BY` or a scan of `entries` is a
@@ -537,24 +603,7 @@ regression.
 
 `scanBranchStructure` is the same query without the payload column. `getEntries` is a primary-key lookup keyed by `e.id IN (...)`.
 
-The repository's existing `SessionSearch` surface remains. SQLite replaces its rowid-dependent index with an FTS projection keyed by stored `session_id` and `entry_id`; searchable text is the JSON serialization of the entry, matching the scanning fallback. The transaction that places an entry also inserts its projection after validation. Pending content is not searchable before placement. Fork import populates the same projection, and session deletion removes its rows. Search never depends on `entries.rowid`.
-
-### Postgres — future fourth backend
-
-Planned, not normative; named now because its native partitioning is what the identity design (§1.2) and the retention design (Part 6) are shaped for. The logical model is identical. Two temperature zones in one database:
-
-```text
-hot, unpartitioned catalog:        partitioned by entry-id range (period bounds):
-  registers                          entries
-  branch_meta                        usage_ledger
-  partition inventory                branch index rows
-  session_stats                      FTS projection
-  writer leases, sessions
-```
-
-- `PARTITION BY RANGE (id)` on the uuid primary-key column, with period-boundary UUIDs (zeroed tails) as bounds. The primary key stays `(session_id, id)`; point lookups prune to one partition from the id's own time prefix, and no partition-key column exists.
-- One database means **one transaction spans hot registers and partitioned entries**: an acceptance transaction — entry inserts plus several register writes — is a single Postgres transaction, exactly as on SQLite.
-- Expiry is `seal period → write per-session aggregates into the inventory → DETACH CONCURRENTLY → DROP`. `DETACH CONCURRENTLY` is not transactional, so expiry is a small recoverable protocol driven by inventory state, not one atomic step; a crash between steps redoes the step the inventory names. Retention semantics — pins, preflight, boundaries — are Part 6.
+Because the file is the session, the precise rewrite (§2.9) and forks are file operations: build a fresh database (`VACUUM INTO` or row copy over one read snapshot) and, for the rewrite, atomically swap it over the old path — the same shape JSONL uses.
 
 ## 1.8 Why write-once plus registers
 
@@ -579,6 +628,8 @@ interface MessageEntry       extends EntryBase { type: "message"; message: Agent
 interface CompactionEntry    extends EntryBase { type: "compaction"; summary: string;
                                                  retainedTail: AgentMessage[]; tokensBefore: number;
                                                  details?: JsonValue; usage?: Usage; fromHook: boolean }
+/** fromId is the summarized branch's pre-navigation leaf: the producing
+    operation's sourceLeafId (§3.10). */
 interface BranchSummaryEntry extends EntryBase { type: "branch_summary"; fromId: string;
                                                  summary: string; details?: JsonValue;
                                                  usage?: Usage; fromHook: boolean }
@@ -594,7 +645,7 @@ Rules:
 - Tool-result entries carry `terminate?: true`. It is orchestration state that `ToolResultMessage` has no field for.
 - Every compaction and branch summary carries `fromHook`: `true` for hook output, `false` for generated.
 - Every compaction stores a complete `retainedTail` (`[]` when empty). **Context never reads past a compaction.** This is what makes a compaction a self-contained checkpoint rather than a pointer into history.
-- A custom entry may carry no `data`. There is no payload-compatibility table to check: an entry either decodes against its type's runtime schema or is corruption.
+- A custom entry may carry no `data`. An entry either decodes against its type's runtime schema or is corruption.
 - Payloads are inline, so two entries never share stored content; there is no deduplication layer.
 
 ## 2.2 Placement
@@ -612,7 +663,7 @@ TX[ insert e_a4 = { parent: e_q1, type: "message", message: <assistant response>
     upsert lane.leaf/main = "e_a4" ]
 ```
 
-**Content first, placement later** — queued input (`steer`, `followUp`, `nextRun`) and deferred tree writes. The entry id is minted at enqueue and doubles as the register key; queue state references content by that one id — the old `{ nodeId, valueId }` pair collapses to a single string. Two transactions, possibly far apart:
+**Content first, placement later** — queued input (`steer`, `followUp`, `nextRun`) and deferred tree writes. The entry id is minted at enqueue and doubles as the register key; queue state references content by that one id. Two transactions, possibly far apart:
 
 ```
 t0  TX[ upsert pending.entry/e_q1 = { type: "message", payload: <200KB message> },
@@ -624,7 +675,7 @@ t1  TX[ insert e_q1 = { parent: e_a3, type: "message", message: <from the regist
         S(next){ ...inbox.steer -= "e_q1" } ]
 ```
 
-The register dies in the transaction that places the entry. Crash before `t1`: the item is still queued. Crash after: it is placed and the register is gone. **There is no third state** — until placement or cancellation, exactly one of register and entry exists at every commit boundary, never both and never neither. Cancellation is the other exit: `cancelQueued` deletes the register, and the content is simply gone, never having touched the tree (§3.11). Because the id was minted at enqueue, a late-placed entry lands in the partition of its mint date (§1.2).
+The register dies in the transaction that places the entry. Crash before `t1`: the item is still queued. Crash after: it is placed and the register is gone. **There is no third state** — until placement or cancellation, exactly one of register and entry exists at every commit boundary, never both and never neither. Cancellation is the other exit: `cancelQueued` deletes the register, and the content is simply gone, never having touched the tree (§3.11).
 
 **Id reserved before content exists** — assistant responses and tool results. The reserved id is a plain minted string inside `op.state`; no register and no row exist until settlement inserts the complete entry. Reserving costs nothing.
 
@@ -684,7 +735,8 @@ Setting a fact to `undefined` deletes its register — real deletion, not a tomb
 
 ```ts
 interface BranchScan {
-  start?: string;               // default: the view's lane leaf
+  start?: string;               // required at the Storage layer; the Session
+                                // tree view defaults it to the view's lane leaf
   stopAtType?: EntryType;       // scan ends after the first match, inclusive
   stopAtId?: string;
   type?: EntryType;
@@ -698,8 +750,6 @@ type EntryCursor = { seq: number };
 
 Semantics: take the path from `start` toward the root, order it (default `newestFirst`), stop **inclusively** at the first `stopAt` match, filter by `type`/`customType`, apply the exclusive cursor, then apply `limit`. For `newestFirst`, a cursor retains `seq < cursor.seq`; for `oldestFirst`, it retains `seq > cursor.seq`. A `stopAt` entry is returned only if it also passes the filter.
 
-**Retention boundaries.** On a backend with retired partitions, a scan that reaches an entry whose `parentId` decodes to a retired period stops there cleanly, as if at a root (§1.2). The stop must be explicit at public surfaces: branch finders report a truncation marker — `truncatedAt: { parentId }`, the partition being the id's own time prefix — never a silently short result, because extension-state lookups walk past compactions by design (§5.3) and must distinguish "never set" from "expired". Storage itself needs no extra channel: the marker derives from the last returned entry's `parentId`. The three shipping backends never truncate while their per-session retired-range set is empty, which is the default (§6.4).
-
 **Context projection** — how a provider request is built:
 
 1. `scanBranch({ start: leaf, order: "newestFirst", stopAtType: "compaction" })`.
@@ -708,13 +758,13 @@ Semantics: take the path from `start` toward the root, order it (default `newest
 4. Run custom entries through `entryProjectors`. An unprojected custom entry never enters context.
 5. Run `transform_context`, then `toProviderMessages`.
 
-There is no rule for omitting an overflow response, and no link anywhere pointing at one. An overflow response is committed with stop reason `error` (§3.7) and is therefore dropped by rule 3 like any other error, and by any downstream `transformMessages` that filters the same way.
+An overflow response needs no dedicated omission rule: it is committed with stop reason `error` (§3.7) and is therefore dropped by rule 3 like any other error, and by any downstream `transformMessages` that filters the same way.
 
 **Append-only context invariant.** Across the requests of one lane, provider context must only grow at the tail. An insertion before the previous request's tail invalidates the provider's KV cache and multiplies cost. This is *why* mid-run writes defer to checkpoints, where they append at the tail. Compaction is the one deliberate cache invalidation, and it trades that for a smaller context.
 
 ## 2.6 The branch index
 
-Memory and JSONL walk parent pointers in RAM. SQLite — and the future Postgres backend — maintain a private segmented branch cache so a diverging append does not copy an unbounded root prefix.
+Memory and JSONL walk parent pointers in RAM. SQLite maintains a private segmented branch cache so a diverging append does not copy an unbounded root prefix.
 
 `branch_entries` stores the entries physically present in one segment. `branch_meta` stores its tip and optional `{ baseBranchId, baseSeq }`. A segment logically contains its own rows above `baseSeq` plus the referenced base prefix through `baseSeq`.
 
@@ -731,21 +781,9 @@ Two correctness rules are mandatory:
 - The base branch must itself cover the leaf within its logical range; merely containing the leaf in an ancestor is insufficient.
 - The newest compaction search must traverse the base chain; checking only the newest physical segment can miss it.
 
-**Partition purity** — two additional rules on a partitioned backend, vacuous on SQLite:
-
-- **Append rule.** Appending an entry whose partition differs from the current segment's closes the segment: the old segment becomes the base of a fresh one. Segments are single-partition by construction, so index rows live in the same partition as the entries they index and die with it (§1.7).
-- **Diverge rule.** Copy-on-diverge caps at partition boundaries. Never copy older-partition index rows forward into a newer segment; chain a base reference into the older partition's own segments instead — otherwise new partitions accumulate rows referencing droppable ones, and a drop silently gaps retained scans.
-
-Traversal stepping into a base whose partition is retired is a retention boundary (§2.5): terminate the scan and report it. Truncate the chain lazily on first access; no eager `branch_meta` rebuild happens at drop time. `branch_meta` — tips and base pointers, hot, mutable, globally unique — always stays in the unpartitioned catalog.
-
-```text
-S1 (2027-01): e1…e19  ←base─ S2 (2027-02): e20…e29  ←base─ S3 (2027-03): e30…e42
-drop 2027-01 → a scan via S3→S2 stops after e20 and reports the boundary; S2/S3 untouched
-```
-
 The cache must preserve:
 
-- following a segment chain yields the exact root path with no gaps or duplicates — up to a retention boundary, where it stops cleanly;
+- following a segment chain yields the exact root path with no gaps or duplicates;
 - all chains containing an entry agree below it;
 - runtime reads never fall back to a table scan or parent walk;
 - stale branches remain valid cache history;
@@ -768,7 +806,7 @@ type ForkOptions =
 - The destination is idle and its token/cost ledger starts at zero. Entry-local display usage remains on copied entries.
 - Facts follow the selected scope: name/custom facts always copy; labels copy only when their target copies unless tree scope copies all targets.
 - Any message may be the fork point. Request construction heals orphaned tool calls.
-- Copied entries keep their ids, so they keep their partitions. Where the source path crosses a retention boundary, the copy stops there exactly as a scan does (§2.5): the boundary entry becomes a retained root in the destination, keeping its original `parentId`. How a fork destination classifies the dangling references it inherits — including on backends that never retire periods themselves — is defined with the rest of the retired-boundary semantics in Part 6.
+- Copied entries keep their ids.
 - The destination metadata records `parentSessionId`.
 
 A source with only fresh/unconfigured `main`—new format 4 or read-only normalized v3—may have no configuration. Either fork scope then creates one unconfigured destination `main`, which first harness attachment seeds normally. Every configured format-4 lane copied by a fork keeps its current total configuration.
@@ -782,7 +820,8 @@ interface SessionMetadata {
   id: string;
   createdAt: number;
   /** Current storage schema version (Part 7). */
-  storageVersion: number;
+  storageVersion: number;      // starts at 1 for new format-4 sessions
+  cwd?: string;                // working directory, when the application records one
   parentSessionId?: string;
   /** Only when a v3 parent path cannot be resolved to an available header id. */
   legacyParentSessionPath?: string;
@@ -791,14 +830,6 @@ interface SessionMetadata {
 interface SessionCodecOptions {
   /** Built-in provider-message roles are registered by default. */
   customMessageSchemas?: Record<string, TSchema>;  // keyed by custom `role`
-}
-
-interface SessionSearchOptions { text: string; cwd?: string }
-interface SessionSearchHit<M extends SessionMetadata = SessionMetadata> {
-  metadata: M; entryId: string; timestamp: string; snippet?: string; score?: number;
-}
-interface SessionSearch<M extends SessionMetadata = SessionMetadata> {
-  search(options: SessionSearchOptions): Promise<SessionSearchHit<M>[]>;
 }
 
 interface SessionRepo<M extends SessionMetadata = SessionMetadata,
@@ -823,7 +854,8 @@ interface Session<M extends SessionMetadata = SessionMetadata> extends SessionTr
   getEntries(ids: string[]): Promise<ReadonlyMap<string, Entry>>;
   getRegister<N extends RegisterNamespace>(namespace: N, key: string):
     Promise<Register<N> | undefined>;
-  listRegisters<N extends RegisterNamespace>(namespace: N): Promise<Register<N>[]>;
+  listRegisters<N extends RegisterNamespace>(namespace: N, keyPrefix?: string):
+    Promise<Register<N>[]>;
 
   close(): Promise<void>;
 }
@@ -831,9 +863,83 @@ interface Session<M extends SessionMetadata = SessionMetadata> extends SessionTr
 
 Repository constructors accept `SessionCodecOptions`. Every declaration-merged custom `AgentMessage` must have a string `role` and a registered runtime schema; unknown custom roles are rejected before persistence and on decode. A new repository session creates `main` with null leaf and an empty `LaneState`, but no configuration; first harness attachment writes its seed configuration.
 
-`open()` compares the stored `storageVersion` with the binary's: equal proceeds; older runs chained migrations under the writer lease before returning (Part 7); newer refuses to open. Old coding-agent v3 JSONL sessions open through the same repository and normalize on load (Appendix C — "v3" there names the legacy JSONL session format, not this document).
+`open()` compares the stored `storageVersion` with the binary's: equal proceeds; older runs chained migrations under the writer lease before returning (Part 7); newer refuses to open. Old coding-agent v3 JSONL sessions open through the same repository and normalize on load (Appendix B — "v3" there names the legacy JSONL session format, not this document).
 
-Repository implementations resolve `fork(source, ...)` to the source's serialized snapshot boundary: an active Memory/JSONL storage queues the snapshot with commits; an inactive JSONL file is read as one immutable prefix; SQLite uses one read transaction. Repositories may keep an active-storage registry by session id for this purpose. This is repository coordination, not part of the one-session `Storage` contract.
+Repository implementations resolve `fork(source, ...)` to the source's serialized snapshot boundary: an active Memory/JSONL storage queues the snapshot with commits; an inactive JSONL file is read as one immutable prefix; SQLite uses one read snapshot of the session's file. Repositories may keep an active-storage registry by session id for this purpose. This is repository coordination, not part of the one-session `Storage` contract.
+
+How a repository organizes its sessions is its own choice, constrained only by the storage backend: JSONL and SQLite storage are one file per session, so their repositories are file-based; a Postgres storage could hold every session in one database.
+
+### Search
+
+Search is a **standalone service over the repository**, with its own store. The dependency points one way: the service consumes `repo.list()` and read-only session opens; the repository knows nothing about search and exposes no search methods, and no conformance test covers any of this. An application that wants search constructs the service and queries it directly:
+
+```ts
+const search = createSqliteSearchService({ repo, dbPath });    // reference impl
+await search.sync();                                           // catch up cursors
+events.on("entry_added", (e) => search.notify(e.sessionId));   // optional freshness
+
+const hits = await search.searchSessions({ text: "auth migration", limit: 10 });
+```
+
+```ts
+interface SessionSearchService {
+  /** Sessions ranked by best match. Required. */
+  searchSessions(query: SearchQuery): Promise<SessionSearchHit[]>;
+  /** Entries ranked by match. Optional capability. */
+  searchEntries?(query: SearchQuery): Promise<EntrySearchHit[]>;
+
+  sync(): Promise<void>;              // enumerate sessions, catch up all cursors
+  notify(sessionId: string): void;    // freshness hint; debounced single-session pull
+  remove(sessionId: string): Promise<void>;
+  close(): Promise<void>;
+}
+
+interface SearchQuery { text: string; limit?: number }  // limit counts the method's unit
+
+interface SessionSearchHit {
+  sessionId: string;
+  score?: number;
+  top?: { entryId: string; snippet?: string; timestamp: number };  // best match, for display
+}
+
+interface EntrySearchHit {
+  sessionId: string; entryId: string; timestamp: number;
+  snippet?: string; score?: number;
+}
+```
+
+The application owns the lifecycle: `sync()` at startup or on a schedule, `notify()` wired to its event stream when it wants freshness, `remove()` alongside `repo.delete()` (or left to the next `sync()`, which reconciles against `repo.list()`). Hits carry `sessionId`; callers join metadata through the repository they already hold.
+
+**Indexing is pull-based; events are only hints.** The service keeps a durable cursor per session — the highest entry `seq` it has indexed. `sync()` enumerates sessions via the repository (old, new, and files that arrived by copy alike), reads `scanEntries({ fromSeq: cursor + 1 })` on each, indexes message-entry text idempotently per `(sessionId, entryId)`, and advances the cursor. A crash mid-batch re-indexes a few rows into the same state; a service deployed against years of existing sessions starts empty and catches up with the same loop. `notify()` never carries content — it is a poke that triggers a debounced pull of one session; a lost poke is caught by the next sweep. The index is a rebuildable projection with zero authority: indexing failures never affect the harness or commits.
+
+Two mechanical notes. Reading a session another process is writing is legal — the writer lease gates writers, and WAL gives cross-process snapshot reads — but a sweep may skip lease-held sessions as an optimization, since `notify()` covers the hot ones. The precise rewrite (§2.9) swaps a session's store and may renumber seqs, so cursors key on `(sessionId, storeGeneration)`; the rewrite bumps a generation counter in metadata and a mismatch triggers a full re-index of that session.
+
+The reference implementation is one standalone SQLite database — an FTS5 table over `(session_id, entry_id, text)` plus the cursor table — and works unchanged over JSONL session files. Several processes may share it under the usual discipline (WAL, `busy_timeout`, `BEGIN IMMEDIATE`, idempotent rows, monotonic cursor updates); writers serialize.
+
+**Open question — metadata filtering.** Coding-agent's resume flow filters sessions by `cwd`; other repositories have no cwd concept at all. Repositories already model implementation-specific listing through their `L` options generic (`list(options?: L)`), but `SearchQuery` is deliberately generic — how does a repo-specific filter reach the index? Candidates, to be settled by the people who will fight over it:
+
+```ts
+// (a) typed filter passthrough — service becomes generic over a filter type
+await search.searchSessions({ text: "auth", filter: { cwd: "/repo" } });
+
+// (b) pre-restrict via the repo's own listing; pass the candidate id set
+const local = await repo.list({ cwd: "/repo" });
+await search.searchSessions({ text: "auth", within: local.map((m) => m.id) });
+
+// (c) post-filter in the app — breaks ranking: limit applies before the filter
+const all = await search.searchSessions({ text: "auth", limit: 10 });
+const hits = all.filter((h) => byId.get(h.sessionId)?.cwd === "/repo");
+
+// (d) index chosen metadata fields at sync time; filter natively in the index
+createSqliteSearchService({ repo, dbPath, metadataFields: ["cwd"] });
+await search.searchSessions({ text: "auth", where: { cwd: "/repo" } });
+```
+
+(a) keeps one round trip but makes the service generic over each repo's filter vocabulary; (b) composes with any repo unchanged but ships a possibly huge id set into the query; (c) is unsound as shown — filtering after `limit` drops results; (d) is what the index does best but couples the service to the metadata fields chosen at sync time and needs re-`sync` when they change.
+
+## 2.9 The precise rewrite
+
+Entries and usage rows are never deleted (§1.2). The sole sanctioned exception is the **precise rewrite**: an administrative repository operation that copies the retained set — entries, usage rows, facts, lane registers — into a fresh session store over a coherent snapshot, exactly as a fork does (§2.8), then atomically swaps it for the old store. Its keep-predicate can express what no runtime mechanism may: compliance-grade erasure (including content copied forward into `retainedTail`s and summaries), pruning abandoned branches, and re-minting legacy-format ids (Appendix B). It is tooling above the harness — no harness surface exposes it, and no core rule depends on it.
 
 # Part 3 — The operation state machine
 
@@ -923,11 +1029,11 @@ interface Inbox {
 interface OperationError { code: string; message: string; details?: JsonValue }
 ```
 
-The old `QueuedInput { nodeId, valueId }` and `PendingWrite` pairs are gone: a queue item is one entry id, and everything else about it — payload, write type, `customType` — is dereferenced from its `pending.entry` register.
+A queue item is one entry id; everything else about it — payload, write type, `customType` — is dereferenced from its `pending.entry` register.
 
 `latestAssistantEntryId` updates in the same settlement transaction as every assistant generation or deferred-fetch response. It lets finish and resume construct results/events without a branch scan. A tool batch retains its producing turn id while tool work remains active.
 
-Any transition that appends conversational input or tool results and requires another assistant writes a checkpoint with `need_assistant(false)` and the appended entry as `triggerEntryId`. An unprojected custom write preserves the current checkpoint, including trigger and overflow flag. Entering threshold compaction first copies the checkpoint to `resumeAfter` with `thresholdCheckedTriggerEntryId = triggerEntryId`; decline, empty preparation, success, and crash therefore cannot recheck the same boundary.
+Any transition that appends conversational input or tool results and requires another assistant writes a checkpoint with `need_assistant(false)` and the appended entry as `triggerEntryId`. A `may_finish` checkpoint sets `triggerEntryId` to the entry that caused the boundary: the settled response for a `stop`/genuine-`length` settlement (§3.7), the newest result entry for an all-terminating tool batch (§3.8) — so threshold dedup (§3.12) and restore validation (§3.3) always name an existing entry. An unprojected custom write preserves the current checkpoint, including trigger and overflow flag. Entering threshold compaction first copies the checkpoint to `resumeAfter` with `thresholdCheckedTriggerEntryId = triggerEntryId`; decline, empty preparation, success, and crash therefore cannot recheck the same boundary.
 
 ### Generation
 
@@ -941,6 +1047,10 @@ interface GenerationContext {
   configuration: LaneConfiguration;
   streamOptions: AgentHarnessStreamOptions;
   retryPolicy: NormalizedRetryPolicy;
+  /** Copied from the producing checkpoint's need_assistant continuation so a
+      settlement classified after crash-restore still knows whether overflow
+      recovery was already spent (§3.7, §3.9). */
+  overflowRecoveryUsed: boolean;
 }
 
 type Generation =
@@ -952,7 +1062,7 @@ type Generation =
       notBefore: number; errorMessage: string };
 ```
 
-The context snapshots configuration, stream options, and retry policy **inline** — there is no configuration value to point at, and `LaneConfiguration` is small. Recovery can therefore report exactly what is missing without resolving anything (§4.4). For each attempt, `before_request` runs from generation `ready` (an elapsed retry wait first returns to `ready`). Its curated patch is composed with the context's captured base stream options, then `intendedOutputLimit` and `contextWindow` are calculated and persisted in the `effect_pending` intent before dispatch. A pre-intent crash may rerun the hook. Harness-owned `before_payload`/`after_response` callbacks are mounted only after intent and cannot be replaced through stream options.
+The context snapshots configuration, stream options, and retry policy **inline**; `LaneConfiguration` is small. Recovery can therefore report exactly what is missing without resolving anything (§4.4). For each attempt, `before_request` runs from generation `ready` (an elapsed retry wait first returns to `ready`). Its curated patch is composed with the context's captured base stream options, then `intendedOutputLimit` and `contextWindow` are calculated and persisted in the `effect_pending` intent before dispatch. A pre-intent crash may rerun the hook. Harness-owned `before_payload`/`after_response` callbacks are mounted only after intent and cannot be replaced through stream options.
 
 ### Tool batch
 
@@ -988,6 +1098,21 @@ type Deferred =
 ```
 
 One `resume()` performs at most one `fetchDeferred(handle, { wait: 0 })`. Suspended `poll` is the number of completed polls; a fresh intent uses `poll + 1`, and that 1-based value is `before_request.attempt` and the poll turn-id suffix. A poll starts from the original generation's copied base stream options, forces `deferred:false`, runs `before_request`, mounts `before_payload`/`after_response`, then commits its fresh intent and dispatches like assistant generation. Current global stream settings do not affect it. There is no polling retry cap, backoff, or internal loop. A pending response must have a completely equal handle and becomes the next source. A mismatched pending handle is normalized to a durable `error` response explaining the mismatch; response, usage, `latestAssistantEntryId`, and response-provenance `failure_drain` commit atomically.
+
+The complete transition table — every row is one `commit()`; classification order (§3.7) applies to every poll settlement, cancellation first:
+
+| From | Trigger | Transaction | To |
+|---|---|---|---|
+| assistant `effect_pending` | settlement classifies `deferred` with a valid handle | §3.7's deferred row | suspended, `poll: 0`, `sourceEntryId: R` |
+| suspended, poll *k* | `resume()`: the poll's `before_request` settlement commits its intent, consuming the invocation's single poll permit | mint fresh R′ and U′, then `TX[ S(deferred{effect_pending, poll k+1, responseEntryId R′, usageId U′}) ]` | effect_pending, poll *k*+1 |
+| effect_pending, poll *k*+1 | fetch returns **pending** with a completely equal handle | `TX[ insert response entry R′, upsert lane.leaf = R′, insert usage U′, S(latestAssistantEntryId=R′, deferred{suspended, sourceEntryId R′, poll k+1}) ]` — the pending response becomes the next source and the operation re-suspends; no second poll this invocation | suspended, poll *k*+1 |
+| effect_pending | fetch returns **pending** with a mismatched handle | normalize to a durable `error` response explaining the mismatch: `TX[ insert normalized response R′, upsert lane.leaf = R′, insert usage U′, S(latestAssistantEntryId=R′, failure_drain{error, provenance:response R′}) ]` | failure_drain |
+| effect_pending | fetch returns **ready** with tool calls | `TX[ insert response R′, upsert lane.leaf = R′, insert usage U′, S(latestAssistantEntryId=R′, tools{plan with reserved result ids}) ]` — result ids minted as followers of R′ (§1.2) | tools |
+| effect_pending | fetch returns **ready** without tool calls | `TX[ insert response R′, upsert lane.leaf = R′, insert usage U′, S(latestAssistantEntryId=R′, checkpoint{may_finish, includeFinalAssistant:true}) ]` | checkpoint |
+| effect_pending | fetch settles as a provider `error` | `TX[ insert response R′, upsert lane.leaf = R′, insert usage U′, S(latestAssistantEntryId=R′, failure_drain{error, provenance:response R′}) ]` — polls have no retry path | failure_drain |
+| effect_pending, restored, running control | crash left the poll's outcome unknown; the next `resume()` replaces it | mint fresh R″/U″ and commit a fresh intent at the **same** poll number — an unknown-outcome poll never completed, so `poll` does not increment; the old reserved id strings are abandoned, never materialized | effect_pending, poll *k*+1 |
+| effect_pending, cancelled control | reconciliation, live or restored (§4.5, §4.6) | synthetic settlement under the **existing** reserved ids: `TX[ insert synthetic aborted response R′, upsert lane.leaf = R′, insert zero usage U′, S(latestAssistantEntryId=R′, cancelled checkpoint{may_finish}) ]` | cancelled checkpoint → aborted finish |
+| suspended, cancelled control | reconciliation | no fetch starts; best-effort `cancel_deferred` targets the newest source (§4.6), and the operation finishes through the aborted terminal transaction | terminal |
 
 ### Structural work
 
@@ -1048,7 +1173,7 @@ interface LaneState {
 Restore validates only the current lane and operation registers and the entries/registers they directly name; there is no history to audit and none exists. Required checks:
 
 - `lane.state/{lane}` holds a `LaneState`; when it names operation O, `op.meta/O` holds an `Operation` for that lane, and `op.state/O` holds an `OperationState` compatible with O's intent kind;
-- every entry id the current state names — trigger, latest assistant, batch assistant, deferred source, completed results, prompt entries, the lane leaf — resolves to an existing entry of the expected type;
+- every entry id the current state or `op.meta` names — trigger, latest assistant, batch assistant, deferred source, completed results, prompt entries, a non-null `sourceLeafId`, a navigation intent's non-null `targetId`, the lane leaf — resolves to an existing entry of the expected type;
 - reserved response/result/usage ids, if materialized, contain the intended kind and identity; an unmaterialized reserved id resolves to nothing, which is the expected pre-settlement condition, never an error;
 - every id in `inbox.*`, `control.drained*`, and `pendingNextRun` has a `pending.entry` register with a valid payload; every effect-pending call has its `op.tool_args` register; every structural decision has its `op.preparation` register;
 - tool source indices are complete, ordered, unique, in range, and use unique result ids; completed result entries match their source calls;
@@ -1085,7 +1210,7 @@ stateDiagram-v2
     tools --> checkpoint : batch complete
 
     compaction --> checkpoint : resumeAfter restored
-    compaction --> failure_drain : overflow compaction declined or failed
+    compaction --> failure_drain : overflow declined; threshold/overflow generation failed
 
     deferred --> deferred : poll returns pending
     deferred --> tools : ready response with calls
@@ -1096,6 +1221,8 @@ stateDiagram-v2
     failure_drain --> terminal : inbox drained (failed)
 
     checkpoint --> terminal : abort reconciled (aborted)
+    compaction --> terminal : abort before structural commit (aborted)
+    failure_drain --> terminal : abort reconciled after writes drain (aborted)
     terminal --> [*]
 ```
 
@@ -1109,8 +1236,11 @@ compaction:  deciding ──hook declines───────────→ te
                       ──hook selects generation─→ generating ──→ terminal TX (completed|failed)
 
 navigation:  ready_to_commit ───────────────────→ terminal TX (completed)
-             summary.deciding ──→ generating ───→ terminal TX (completed)
+             summary.deciding ──hook declines───→ terminal TX (declined; no move)
+                              ──→ generating ───→ terminal TX (completed|failed)
 ```
+
+A declined summarized navigation moves nothing: the leaf stays at the source, and the terminal transaction records outcome `declined`. Abort before any structural commit finishes `aborted`, likewise without a move (§4.6).
 
 ## 3.6 Acceptance
 
@@ -1121,11 +1251,11 @@ navigation:  ready_to_commit ─────────────────
 | idle lane | unsummarized `navigateTree()` after validation | `TX[ upsert op.meta/O, S(navigation{ready_to_commit}), L ]` |
 | reserved idle lane | summarized `navigateTree()` with preparation | `TX[ upsert op.preparation/O:{taskId} = P, upsert op.meta/O, S(navigation{summary.deciding, taskId}), L ]` |
 
-Captured `nextRun` items already have their payloads in `pending.entry` registers; acceptance inserts their entries from those payloads, deletes the registers, and removes the ids from `pendingNextRun` — the placement half of the one deliberate double write (§1.8). A late-captured item keeps its enqueue-minted id and lands in that id's partition (§1.2).
+Captured `nextRun` items already have their payloads in `pending.entry` registers; acceptance inserts their entries from those payloads, deletes the registers, and removes the ids from `pendingNextRun` — the placement half of the one deliberate double write (§1.8). A late-captured item keeps its enqueue-minted id (§1.2).
 
 Manual compaction first allocates its operation id and takes a process-local lane admission reservation, then reads preparation. Summarized navigation uses the same reservation while collecting/building branch preparation; unsummarized navigation needs none because validation and acceptance share one lane-line job. While reserved, competing operations receive `LaneBusy` naming that provisional id/kind and idle tree writes wait; `nextRun` and configuration changes may still commit because they do not move the leaf. Empty compaction preparation releases the reservation and returns `NothingToCompact` with no operation write. Non-empty preparation is accepted only against the unchanged reserved source leaf. Process death drops the reservation and leaves the lane idle.
 
-Pre-acceptance rejections write **nothing**: `LaneBusy`, `NothingToCompact`, `InvalidNavigation` (target is the current leaf, label on the root target, or summarize from root), `UnknownTarget` (non-null target missing), `MissingIdentities` (model, provider, or an active tool name does not resolve). Prompt allocates its operation id before `before_run` so hook idempotency keys are stable. The hook still runs before acceptance; if a concurrent caller wins the lane, its output and provisional id are discarded and no operation exists.
+Pre-acceptance rejections write **nothing**: `LaneBusy`, `NothingToCompact`, `InvalidNavigation` (target is the current leaf, label on the root target, summarize from root, or a null target with summarize), `UnknownTarget` (non-null target missing), `MissingIdentities` (model, provider, or an active tool name does not resolve), and `InvalidMessage` when acceptance would append zero entries — an empty normalized prompt with no hook injections and no captured `nextRun` items leaves no newest entry to anchor the checkpoint's trigger. Prompt allocates its operation id before `before_run` so hook idempotency keys are stable. The hook still runs before acceptance; if a concurrent caller wins the lane, its output and provisional id are discarded and no operation exists.
 
 **Acceptance must observe `currentOperationId === null`.** Because acceptance is on the lane mutation line, this is validation, not compare-and-swap.
 
@@ -1144,7 +1274,7 @@ Pre-acceptance rejections write **nothing**: `LaneBusy`, `NothingToCompact`, `In
 | effect_pending | terminal error, retries exhausted, or 2nd overflow | `TX[ insert response entry R, upsert lane.leaf = R, insert usage U, S(latestAssistantEntryId=R, failure_drain{error, provenance:response R}) ]` | failure_drain |
 | retry_wait | `notBefore` elapsed | `TX[ S(assistant{ready, nextAttempt:k+1}) ]` | ready |
 
-**There is never a durable "response without usage" or "response and usage without a decision."** All three land together or none do. `R` and `U` are minted at intent and exist only as strings in the state until settlement inserts the complete rows (§2.2). A settlement that plans tools mints each `resultEntryId` as a follower of `R`, inheriting its 48-bit timestamp (§1.2), so the assistant and its results share a partition by construction.
+**There is never a durable "response without usage" or "response and usage without a decision."** All three land together or none do. `R` and `U` are minted at intent and exist only as strings in the state until settlement inserts the complete rows (§2.2). A settlement that plans tools mints each `resultEntryId` as a follower of `R`, inheriting its 48-bit timestamp (§1.2), so the assistant and its results form one id-cohesive group by construction.
 
 ### Classification order
 
@@ -1161,7 +1291,7 @@ Pure, computed in memory before the settlement transaction. First match wins.
 
 Two normalizations happen at commit, and both are deliberate. A cancelled response commits as `aborted`. An overflow-classified response commits as `error`. In both cases the original stop reason is overwritten and the reason is preserved in human-readable form in `errorMessage`.
 
-The overflow normalization is what removes every link from this design. Because the committed response is `error`, §2.5 rule 3 drops it from context automatically — no superseded-response id on the compaction, none in the operation state, and no omission rule of its own. The response stays in the tree as durable history, because a provider request happened and was billed.
+Because the committed response is `error`, §2.5 rule 3 drops it from context automatically — the compaction and the operation state carry no reference to it, and no dedicated omission rule exists. The response stays in the tree as durable history, because a provider request happened and was billed.
 
 **Overflow detection is a heuristic and must be labelled as one.** Three sources, in decreasing reliability:
 
@@ -1281,7 +1411,8 @@ Unsummarized and summarized both finish in **one** transaction — navigation's 
 TX[ insert hook-reported usage row (only for a hook-supplied summary),
     upsert lane.leaf = target,
     insert summary entry with its display usage snapshot (when summarize;
-      parent is the target),
+      parent is the target; fromId = the operation's sourceLeafId — the
+      pre-navigation source leaf),
     upsert lane.leaf = summary entry (when summarize),
     upsert fact.label (when a label is present),
     delete the operation's op.* registers,
@@ -1298,8 +1429,8 @@ Every queued admission mints the item's entry id (§1.2) and writes its payload 
 | Public input | Admitted when | Transaction |
 |---|---|---|
 | `nextRun(msg)` | any state, including idle | `TX[ upsert pending.entry/{id} = payload, L(pendingNextRun += id) ]` — never starts a run |
-| `steer(msg)` | active running run | `TX[ upsert pending.entry/{id} = payload, S(inbox.steer += id) ]` |
-| `followUp(msg)` | active running run | `TX[ upsert pending.entry/{id} = payload, S(inbox.followUp += id) ]` |
+| `steer(msg)` | open run with running control — including deferred suspension; under `cancel_requested` → `NoActiveRun` | `TX[ upsert pending.entry/{id} = payload, S(inbox.steer += id) ]` |
+| `followUp(msg)` | open run with running control — including deferred suspension; under `cancel_requested` → `NoActiveRun` | `TX[ upsert pending.entry/{id} = payload, S(inbox.followUp += id) ]` |
 | tree write, run active | including suspended and cancelling | `TX[ upsert pending.entry/{id} = payload, S(inbox.writes += id) ]` — survives abort |
 | tree write, lane idle | idle | `TX[ insert entry, upsert lane.leaf ]` |
 | tree write, structural op open | — | wait for the operation to end, then re-evaluate |
@@ -1363,8 +1494,9 @@ TX[ <result-publication writes, when the terminal transition also publishes
      navigation writes>,
     delete op.meta/{O},
     delete op.state/{O},
-    delete op.tool_args/{O}:*        defensive prefix scan; batch completion
-                                     already deletes these atomically (§3.8),
+    delete op.tool_args/{O}:*        defensive prefix scan — listRegisters with
+                                     keyPrefix (§1.5); batch completion already
+                                     deletes these atomically (§3.8),
     delete op.preparation/{O}:*      prefix scan; in-run compactions leave their
                                      preparation after resume,
     delete pending.entry/{id}        for every operation-owned pending id,
@@ -1374,7 +1506,7 @@ TX[ <result-publication writes, when the terminal transition also publishes
 
 Operation-owned pending ids are the remaining `inbox.steer ∪ inbox.followUp ∪ inbox.writes` plus `control.drainedSteer ∪ control.drainedFollowUp` — registers that survived an abort drain die here (§3.11). **Never `lane.state.pendingNextRun`**: those registers are lane-owned, outlive operations, and die only when consumed or cancelled. Ledger rows are never deleted (§1.6). The `L` write rereads the latest `LaneState` on the lane mutation line and clears only `currentOperationId`, preserving concurrently accepted `pendingNextRun` (§3.4).
 
-For the completed run of §0.3's shape — prompt `e_50`, tool call `e_51`/`e_52`, final answer `e_53`:
+For the completed run of §0.4's shape — prompt `e_50`, tool call `e_51`/`e_52`, final answer `e_53`:
 
 ```
 TX[ delete op.meta/op_9,
@@ -1397,7 +1529,7 @@ The invariant this section carries (restated in Part 9): `op.*` registers and op
 
 ## 4.1 The interpreter
 
-The runtime plans from total durable state plus a small process-local scheduler. Entries and stable register values named by the state are batch-loaded before planning. The driver also snapshots current settings revision and registry leases (`Models.lease` and active tool definitions) into `RuntimeSnapshot`; this performs no provider request. When a tool batch first becomes current, the driver resolves `toolContext` once, binds the batch's definitions, and retains them in `DriveState.toolBatches` for every sequential/parallel call in that batch. `nextAction` is then pure over those inputs. Pre-intent hook plans retain the exact lease used for lookup, preparation, schema validation, and eventual dispatch.
+The runtime plans from total durable state plus a small process-local scheduler. Entries and stable register values named by the state are batch-loaded before planning. The driver also snapshots the current settings revision into `RuntimeSnapshot`; this performs no provider request. Providers and tools are resolved from their registries **at dispatch time** by the durable identities captured in state — a missing or replaced entry fails that dispatch in-band (synthetic error settlement), exactly like an unknown tool. When a tool batch first becomes current, the driver resolves `toolContext` once and retains it in `DriveState.toolBatches` for every sequential/parallel call in that batch. `nextAction` is then pure over those inputs.
 
 ```ts
 interface CurrentOperation {
@@ -1414,21 +1546,14 @@ interface CurrentOperation {
 
 type EffectKey = string; // deterministic from durable step/attempt or assistant/sourceIndex
 
-/** Process-local leases captured before intent; never persisted or exposed. */
-type RuntimeProviderLease = ModelRequestLease;
-interface RuntimeToolLease { tool: AgentTool }
-interface RuntimeAssistantLease {
-  provider: RuntimeProviderLease;
-  activeTools: AgentTool[];
-}
-
 interface LiveEffect { plan: EffectPlan; promise: Promise<EffectOutput> }
 
 interface DriveState {
   deferredPollsRemaining: 0 | 1;
   running: Map<EffectKey, LiveEffect>;
   /** One context/tool-definition snapshot per live or restored batch. */
-  toolBatches: Map<string, ReadonlyMap<string, RuntimeToolLease>>;
+  /** toolContext resolved once per batch; key: assistantEntryId. */
+  toolBatches: Map<string, unknown>;
   /** Process-local best-effort attempts; reopen may attempt again. */
   deferredCancellations: Set<string>;
 }
@@ -1436,22 +1561,19 @@ interface DriveState {
 type EffectPlan = { telemetryContext: TelemetryContext } & (
   | { kind: "assistant"; key: EffectKey;
       generation: Extract<Generation, { status: "effect_pending" }>;
-      streamOptions: AgentHarnessStreamOptions; identity: RuntimeAssistantLease }
+      streamOptions: AgentHarnessStreamOptions }
   | { kind: "summary"; key: EffectKey;
-      generation: Extract<SummaryGeneration, { status: "effect_pending" }>;
-      identity: RuntimeProviderLease }
+      generation: Extract<SummaryGeneration, { status: "effect_pending" }> }
   | { kind: "tool"; key: EffectKey; assistantEntryId: string;
       sourceIndex: number;
       /** Full op.tool_args register key: {opId}:{stepId}:{sourceIndex} (§3.8). */
-      argsKey: string; identity: RuntimeToolLease }
+      argsKey: string }
   | { kind: "deferred"; key: EffectKey;
       deferred: Extract<Deferred, { status: "effect_pending" }>;
-      streamOptions: AgentHarnessStreamOptions; identity: RuntimeProviderLease }
+      streamOptions: AgentHarnessStreamOptions }
   | { kind: "cancel_deferred"; key: EffectKey; sourceEntryId: string;
-      handle: DeferredHandle; identity: RuntimeProviderLease }
-  | { kind: "hook"; key: EffectKey; name: keyof HookMap; event: unknown;
-      /** Pre-intent hooks carry the exact lease used to prepare their event. */
-      identity?: RuntimeProviderLease | RuntimeAssistantLease | RuntimeToolLease }
+      handle: DeferredHandle }
+  | { kind: "hook"; key: EffectKey; name: keyof HookMap; event: unknown }
 );
 
 type SummaryAttemptOutcome =
@@ -1486,8 +1608,6 @@ interface RuntimeSnapshot {
   settingsRevision: number;
   streamOptions: AgentHarnessStreamOptions;
   retryPolicy: NormalizedRetryPolicy;
-  providerLeases: ReadonlyMap<string, RuntimeProviderLease>;
-  toolLeases: ReadonlyMap<string, RuntimeToolLease>;
 }
 
 type PlannerInputs = {
@@ -1516,7 +1636,7 @@ type Action =
   | { kind: "await_effect"; key: EffectKey }
   | { kind: "wait"; until: number; telemetryContext: TelemetryContext }
   | { kind: "suspend"; result: OperationResult }
-  | { kind: "done"; result: OperationResult };
+  | { kind: "finish"; result: OperationResult };
 
 async function drive(current: CurrentOperation, live: DriveState): Promise<OperationResult> {
   while (true) {
@@ -1584,15 +1704,18 @@ async function drive(current: CurrentOperation, live: DriveState): Promise<Opera
         current = await reloadCurrent(current.operation.operationId);
         break;
 
+      case "finish":
+        current = await fx.commitTerminal(current, action.result) ?? current;
+        return action.result;
+
       case "suspend":
-      case "done":
         return action.result;
     }
   }
 }
 ```
 
-An intent/ordinary transition requires the `op.state` register still to carry its expected `operationStateSeq`; otherwise it returns `undefined` and the loop replans without dispatch. A successful `before_request`/`before_tool` hook settlement uses its retained identities, atomically commits the effect intent (and the effective `op.tool_args` register), and returns the complete process-local dispatch plan; the drive installs that promise immediately. A crash in the remaining process-only gap is conservatively the ordinary unknown-effect case. A transition that creates a generation/summary `ready` state also supplies the `lane.config` register seq and harness-settings revision it read; the settings/lane commit requires both still match, giving setter-first or step-start-first ordering. The resulting context durably captures the inline configuration, normalized retry policy, and base stream options. Immediately before ordinary external execution, `fx.run` enters the lane mutation line once more: cancellation-first returns `not_started`, while start-first registers the live effect/controller so a later abort signals it. This check uses the already captured identity lease and never re-resolves the registry. Thus no effect starts in the gap after intent without belonging to one of the two serialized orders. Settlement reloads latest total state, verifies the same effect key remains pending, merges the output into that state, and applies current cancellation control. Thus steer/write acceptance, abort, and other parallel-tool intents cannot erase a live result or overwrite newer inbox/control state.
+An intent/ordinary transition requires the `op.state` register still to carry its expected `operationStateSeq`; otherwise it returns `undefined` and the loop replans without dispatch. If a conditional commit or `reloadCurrent` instead finds the operation's registers gone — it is no longer the lane's current operation — the drive stops through external finalization (§4.9). A successful `before_request`/`before_tool` hook settlement atomically commits the effect intent (and the effective `op.tool_args` register) and returns the complete process-local dispatch plan; the drive installs that promise immediately. A crash in the remaining process-only gap is conservatively the ordinary unknown-effect case. A transition that creates a generation/summary `ready` state also supplies the `lane.config` register seq and harness-settings revision it read; the settings/lane commit requires both still match, giving setter-first or step-start-first ordering. The resulting context durably captures the inline configuration, normalized retry policy, and base stream options. Immediately before ordinary external execution, `fx.run` enters the lane mutation line once more: cancellation-first returns `not_started`, while start-first registers the live effect/controller so a later abort signals it. Dispatch then resolves the provider or tool from its registry by the captured durable identity; resolution failure settles in-band. Thus no effect starts in the gap after intent without belonging to one of the two serialized orders. Settlement reloads latest total state, verifies the same effect key remains pending, merges the output into that state, and applies current cancellation control. Thus steer/write acceptance, abort, and other parallel-tool intents cannot erase a live result or overwrite newer inbox/control state.
 
 Parallel tool calls dispatch phase two in source order into `DriveState.running`. The planner may dispatch later calls while earlier promises run, but it emits `await_effect` only for the first incomplete source position. That raw result then crosses source-ordered `fx.finalizeTool`/`after_tool` before settlement. A later settled raw promise remains process-local until its turn. After restart `running` is empty, so durable `effect_pending` follows recovery policy rather than being mistaken for a live effect.
 
@@ -1627,6 +1750,13 @@ interface Effects {
   commitEffectSettlement(current: CurrentOperation, plan: EffectPlan,
                          output: SettlementOutput, telemetry: TelemetryContext):
     Promise<SettlementResult>;
+  /** The terminal transaction (§3.13): register deletes, lane.lastResult,
+      lane.state clear — plus any final entry/label writes the outcome carries
+      (§3.10). Conditional on op.state still being present at its expected seq;
+      undefined = externally finalized first (§4.9). Transition commits derive
+      their entry/usage writes from the state diff the same way. */
+  commitTerminal(current: CurrentOperation, result: OperationResult):
+    Promise<CurrentOperation | undefined>;
   /** Runs after_tool for the raw phase-two result selected in source order. */
   finalizeTool(plan: Extract<EffectPlan, { kind: "tool" }>,
                output: Extract<EffectOutput, { kind: "tool_raw" }>):
@@ -1634,7 +1764,7 @@ interface Effects {
   /** Composite summary plans use this reentrantly for each provider request. */
   runSummaryRequest(plan: { taskId: string; attempt: number; requestIndex: number;
                             usageId: string; configuration: LaneConfiguration;
-                            messages: AgentMessage[]; identity: RuntimeProviderLease;
+                            messages: AgentMessage[];
                             telemetryContext: TelemetryContext }):
     Promise<SummaryRequestOutput>;
   settleSummaryRequest(current: CurrentOperation,
@@ -1691,7 +1821,7 @@ async function restore(lane: string): Promise<
   // Idle lanes are validated too: leaf existence and every pendingNextRun
   // id's pending.entry register (§3.3). Only the operation checks are
   // conditional on an open operation.
-  const entryIds     = directEntryIds(opState?.value, state.value, leaf.value);
+  const entryIds     = directEntryIds(opState?.value, meta?.value, state.value, leaf.value);
   const registerKeys = directRegisterKeys(opState?.value, state.value);
   const [entries, registers] = await Promise.all([
     storage.getEntries(entryIds), getRegisters(registerKeys),
@@ -1718,7 +1848,7 @@ Five register point-lookups: three lane registers, then — only when an operati
 
 **Bounded hydration and validation.** From the loaded state, collect what it names directly and fetch it in one batch:
 
-- **entries:** `triggerEntryId`, `latestAssistantEntryId`, `batch.assistantEntryId`, deferred `sourceEntryId`, completed `resultEntryId`s, prompt entries, the lane leaf;
+- **entries:** `triggerEntryId`, `latestAssistantEntryId`, `batch.assistantEntryId`, deferred `sourceEntryId`, completed `resultEntryId`s, the lane leaf, and from `op.meta` — `meta.value` is a hydration input, not merely presence-checked — `promptEntryIds`, a non-null `sourceLeafId`, and a navigation intent's non-null `targetId`;
 - **registers:** `op.tool_args/…` for effect-pending calls, `op.preparation/…` for structural work, `pending.entry/…` for every `inbox.*`, `control.drained*`, and `pendingNextRun` id.
 
 Then §3.3's bounded validation over exactly that set: every named thing exists and has the right shape; reserved ids that *are* materialized contain what the intent promised; tool call indices are complete and unique. Configuration, stream options, and retry policy need no lookups at all — they are inline in the state itself.
@@ -1729,7 +1859,7 @@ Restore already fetched the directly named entries and registers for validation.
 
 ### Worked example — crash in the uncertain window
 
-The process died mid-stream after an assistant intent (§3.7's `effect_pending` row; the §0.3 run). Reopen:
+The process died mid-stream after an assistant intent (§3.7's `effect_pending` row; the §0.4 run). Reopen:
 
 ```
 lane.state/main -> { currentOperationId: "op_9" }
@@ -1759,7 +1889,7 @@ Same shape for tools (replay only if the captured **and** current declarations s
 
 ### Missing identities
 
-Admission resolves configured identities and returns `Err(MissingIdentities)` before writing when any are absent. Each later assistant, deferred, tool, or whole-summary-attempt preparation snapshots process-local provider/tool leases before its pre-intent hook. That registry/settings-line snapshot is the step-start order: lookup, `prepareArguments`, schema validation, hook event, intent, and dispatch all retain the same lease even if the registry is replaced while the hook runs. Both split-summary requests share the attempt's lease. If resolution fails while state is still safely dispatchable (`ready`, `planned`, or between summary requests), the accepted call resolves `Ok({kind:"suspended", reason:"missing_identities", ...})`; state is unchanged and the operation stays open. A later `resume()` precheck returns `Err(MissingIdentities)` on the same condition. Registering missing pieces does not auto-drive. Because the captured configuration is inline, restore reports exactly what is missing without resolving anything. Restored `effect_pending` has no lease and follows unknown-effect recovery rather than claiming the effect never started. Synthetic settlement, usage repair, queue application, finish, and non-replay reconciliation need no identities.
+Admission resolves configured identities and returns `Err(MissingIdentities)` before writing when any are absent. After that, dispatch trusts the environment: providers and tools are looked up by their captured durable identities at use time, and a lookup that fails settles in-band as an error — the same contract as an unknown tool. If resolution fails while state is still safely dispatchable (`ready`, `planned`, or between summary requests), the accepted call resolves `Ok({kind:"suspended", reason:"missing_identities", ...})` instead of burning an attempt; state is unchanged and the operation stays open. A later `resume()` precheck returns `Err(MissingIdentities)` on the same condition. Registering missing pieces does not auto-drive. Because the captured configuration is inline, restore reports exactly what is missing without resolving anything. Restored `effect_pending` follows unknown-effect recovery rather than claiming the effect never started. Synthetic settlement, usage repair, queue application, finish, and non-replay reconciliation need no identities.
 
 ## 4.5 Crash positions and recovery policy
 
@@ -1798,7 +1928,7 @@ Abort is not a phase. It is `control`.
 
 **Signal ownership makes `aborted` unambiguous.** Provider implementations must set `stopReason: "aborted"` if and only if the signal they were given was pulled, and the harness owns that signal exclusively (§4.2). Since `abort()` commits `control` before pulling it, a settled `aborted` response always has cancellation already durable. Timeouts, transport failures, malformed streams, and provider-side refusals all settle as `error` and take the ordinary retry path — which is correct, because those should retry and a user abort should not. An `aborted` response with `control.status === "running"` is unreachable; if one exists, the session is corrupt (Part 9).
 
-On a deferred source, the `abort()` lane job registers the newest persisted handle/lease as a process-local cancellation target and immediately installs `EffectPlan{kind:"cancel_deferred"}` in `DriveState.running`, even when the drive is awaiting a live fetch. It is the one external action permitted to start under cancelled control, remains valid if fetch settlement advances the durable phase, crosses normal manual gating and `pi.ai.request`, calls the leased `cancelDeferred`, converts success/failure to an in-band output, and never writes operation state. Cancellation reconciliation awaits/removes that live plan before terminal finish. Failure is telemetry only and never blocks finish. `deferredCancellations` prevents repetition in one process; crash/reopen during reconciliation may retry. Missing provider identity skips cancellation but not durable reconciliation.
+On a deferred source, the `abort()` lane job registers the newest persisted handle as a process-local cancellation target and immediately installs `EffectPlan{kind:"cancel_deferred"}` in `DriveState.running`, even when the drive is awaiting a live fetch. It is the one external action permitted to start under cancelled control, remains valid if fetch settlement advances the durable phase, crosses normal manual gating and `pi.ai.request`, calls `Models.cancelDeferred` with the captured identity, converts success/failure to an in-band output, and never writes operation state. Cancellation reconciliation awaits/removes that live plan before terminal finish. Failure is telemetry only and never blocks finish. `deferredCancellations` prevents repetition in one process; crash/reopen during reconciliation may retry. Missing provider identity skips cancellation but not durable reconciliation.
 
 There is no universal assistant closure. The harness never starts a request or appends an assistant message solely to manufacture one. An abort between steps, during tool work, or while suspended can therefore produce no abort-specific assistant event at all.
 
@@ -1825,7 +1955,17 @@ This also keeps the aborted-implies-cancelled invariant (Part 9) true. Close pul
 
 ## 4.8 Faults
 
-A failed storage commit faults the whole harness. A faulted harness stops all effects and rejects pending and future calls with `HarnessFault`; it is never an `Err` result. `faulted: true` appears in snapshots obtained before the fault closes observation. After the cause is fixed, reopening restores each lane from its registers. Close likewise rejects already-accepted local operation promises with `HarnessClosed`; calls not yet accepted return `Err(Closed)`. Provider, tool, and isolated hook failures remain per-lane and in-band. A throw/rejection from a trusted deterministic application computation (`systemPrompt`, `toolContext`, `toProviderMessages`, or an `entryProjector`) is an application defect and faults the harness; it never escapes as an undeclared operation error. `AgentTool.prepareArguments` is the deliberate exception handled by the tool pipeline as a synthetic tool error.
+A failed storage commit faults the whole harness. A faulted harness stops all effects and rejects pending and future calls with `HarnessFault`; it is never an `Err` result. `faulted: true` appears in snapshots obtained before the fault closes observation. After the cause is fixed, reopening restores each lane from its registers. Close likewise rejects already-accepted local operation promises with `HarnessClosed`; calls not yet accepted return `Err(Closed)`. Surfaces without a `Result` channel — configuration and fact setters returning `Promise<void>`, `SessionTree` appends returning an id string — reject with `HarnessClosed` on and after close. Provider, tool, and isolated hook failures remain per-lane and in-band. A throw/rejection from a trusted deterministic application computation (`systemPrompt`, `toolContext`, `toProviderMessages`, or an `entryProjector`) is an application defect and faults the harness; it never escapes as an undeclared operation error. `AgentTool.prepareArguments` is the deliberate exception handled by the tool pipeline as a synthetic tool error.
+
+## 4.9 External finalization
+
+An operation can end from outside its own drive: administrative force-kill tooling — or any future repairer (Part 6) — may commit the terminal transaction (§3.13), with or without synthetic settlements under the reserved ids, while a live drive still holds the operation in memory. The drive discovers this in exactly one way: a conditional commit or `reloadCurrent` finds the operation is no longer the lane's current operation — its registers are absent.
+
+The rule: **the drive stops.** It pulls the operation signal so in-flight effects cancel, discards every in-memory result without writing — no register remains to own a settlement — emits the operation's end events, and resolves the live caller's promise from `lane.lastResult`, which the finalizing transaction wrote (dereferencing `finalAssistantEntryId` to reconstruct `finalMessage` when present).
+
+On the shipping backends a finalizer is either in-process — an admin surface committing on the lane mutation line like any other job — or a separate process that first takes over the writer lease after close/crash. Every terminal transaction, the drive's own included, is conditional on `op.state` still existing at its expected seq, which is what makes invariant 21 (at most one terminal transaction per operation) hold under the race. It never re-creates registers, never commits a competing terminal transaction, and never treats the absence as corruption: absent `op.*` registers with a cleared `currentOperationId` is the ordinary post-terminal shape (§3.13).
+
+A suspended operation needs no drive to stop. The finalizer's terminal transaction leaves the lane idle; a later `resume()` finds `currentOperationId: null` and returns `NothingToResume`, and the application reads the outcome from `getLastResult()` (§5.1) — the same reconciliation path as any post-crash outcome.
 
 ---
 
@@ -1883,7 +2023,7 @@ interface WatchHandle<T> { snapshot: T; start(listener: EventListener): void; un
 
 Skill/template expansion precedes storage. Prompt intent names only normalized caller messages, excluding captured `nextRun` and hook injections.
 
-`getLastResult()` is the post-crash reconciliation path: an application that accepted an operation, lost its process, and reopened reads the `lane.lastResult` register for the outcome its promise never delivered (§3.13). On a partitioned backend, a dormant lane whose leaf id decodes to a retired period enters an explicit **expired-lane** condition on next access rather than failing obscurely; its semantics — surfacing, rebase-to-boundary policy — are defined in Part 6. The three shipping backends never produce it.
+`getLastResult()` is the post-crash reconciliation path: an application that accepted an operation, lost its process, and reopened reads the `lane.lastResult` register for the outcome its promise never delivered (§3.13). It is also how a caller learns the outcome of an operation finalized externally (§4.9).
 
 `waitForIdle()` registers on the lane mutation line and resolves when all earlier admitted lane jobs have settled, `currentOperationId` is null, and no process-local operation/admission reservation is held. Later operations may start immediately after it resolves. Multiple waiters resolve together; close/fault rejects pending waiters.
 
@@ -1945,7 +2085,6 @@ Expected errors use the existing `TaggedError` implementation in `harness/result
 | `UnknownSkill`, `UnknownTemplate` | `name` |
 | `UnknownTarget` | `targetId` |
 | `LaneExists`, `InvalidLane` | `lane` (`InvalidLane` also has `reason`) |
-| `LaneExpired` | `lane`, `leafId` — partitioned-backend expired-lane condition (§6.4) |
 | `Closed` | none |
 
 ```ts
@@ -2126,7 +2265,7 @@ interface SessionStats { messageCount: number; usage: Usage }
 
 Global queries filter first, then apply the exclusive cursor, then `limit`; default order is `"desc"`. A descending cursor retains `seq < cursor.seq`, and an ascending cursor retains `seq > cursor.seq`.
 
-Useful patterns: effective extension state is `findEntryOnBranch({ type: "custom", customType })`; a collection is `findEntriesOnBranch(...)`; a global inventory is `findEntries(...)`. Note that extension-state lookups have **no** `stopAt` and therefore walk past compactions — which is exactly why §2.6 segments rather than truncates. On a partitioned backend, such walks can reach a retention boundary; branch finders then surface the §2.5 truncation marker instead of returning a silently short path, so "never set" stays distinguishable from "expired". The marker's exact API shape is defined with the rest of the retired-boundary semantics in Part 6; the three shipping backends never truncate while their retired-range set is empty (§6.4).
+Useful patterns: effective extension state is `findEntryOnBranch({ type: "custom", customType })`; a collection is `findEntriesOnBranch(...)`; a global inventory is `findEntries(...)`. Note that extension-state lookups have **no** `stopAt` and therefore walk past compactions — which is exactly why §2.6 segments rather than truncates.
 
 `SessionTree` has no navigation; moving a lane is `navigateTree()` on the lane. Finders and `getEntry` return only committed entries: a deferred write is invisible here until applied, but appears in snapshots by its reserved id.
 
@@ -2480,7 +2619,7 @@ interface StreamAssistantConfig {
   transformContext?: (messages: AgentMessage[], signal: AbortSignal) =>
     Promise<AgentMessage[]>;
   toProviderMessages: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
-  requests: ModelRequestLease;              // no registry re-resolution
+  models: Models;                           // resolves identity + auth per request
   streamOptions?: AgentHarnessStreamOptions;
   /** Harness-owned before_payload adapter; undefined keeps the payload. */
   transformPayload?: (payload: unknown, model: Model) =>
@@ -2497,8 +2636,7 @@ function streamAssistant(messages: AgentMessage[], config: StreamAssistantConfig
                          emit: AgentEventSink): Promise<SettledAssistantMessage>;
 // The implementation converts curated streamOptions to provider options and
 // installs harness-owned payload/response callbacks; callers cannot replace them.
-// Existing summary helpers gain ModelRequestLease overloads and use the same
-// bound request path for every split request.
+// Existing summary helpers keep their Models-based request path.
 
 type PreparedToolCall = { kind: "prepared"; toolCall: AgentToolCall;
   tool: AgentTool; args: Record<string, JsonValue> };
@@ -2538,7 +2676,7 @@ External output that violates durable JSON/schema contracts is converted before 
 
 For each live tool batch, the harness resolves `toolContext` exactly once, caches bound `AgentHarnessTool<TContext>` adapters in `DriveState.toolBatches`, and passes that same context as the fifth execute argument for every call. Safe replay after restart creates one new batch snapshot; context is environmental and never persisted.
 
-`executeToolBatch` preserves the existing sequential/parallel behavior: source-ordered preparation and dispatch, concurrent effects in parallel mode, source-ordered finalization/results, no effect for blocked/invalid/genuine-length calls, and `terminate: true` only when every finalized outcome terminates. Compatibility wrappers keep existing public loop signatures and events.
+`executeToolBatch` (the exported successor of the source's private `executeToolCalls`) preserves the existing sequential/parallel behavior: source-ordered preparation and dispatch, concurrent effects in parallel mode, source-ordered finalization/results, no effect for blocked/invalid/genuine-length calls, and `terminate: true` only when every finalized outcome terminates. Compatibility wrappers keep existing public loop signatures and events.
 
 ## 5.8 Telemetry
 
@@ -2559,150 +2697,27 @@ Every storage transaction uses one `pi.session.write`. Its start attributes incl
 
 Telemetry attributes may contain declared ids, names, counts, durations, statuses, and usage. They must never contain prompts, completions, tool arguments/results, file contents, provider payloads, headers, handles, or credentials. Events and hooks may contain such content. The existing generated schema document and adapter/runtime conformance tests remain authoritative; implementation slices extend instrumentation only through those schemas.
 
-# Part 6 — Retention and partitioning
+# Part 6 — Future: partitioned retention (Postgres)
 
-This part exists for one backend — the planned Postgres deployment (§1.7) — but its rules are core: identity (§1.2), branch segments (§2.6), scans (§2.5), and forks (§2.7) all carry obligations that only make sense against the retention design stated here. Memory, JSONL, and SQLite never retire periods; they meet this part through the retired-range inventory (§6.4), which for them is normally empty.
+**This part is informative.** Nothing in it binds the shipping backends: Memory, JSONL, and SQLite never partition and never delete entries or usage rows (§1.2), and no core rule references this part for its correctness. It exists to show that the identity choices in §1.2 are sufficient for the one backend that would eventually retire old data — a possible Postgres deployment with TTL retention. It is a bridge we cross when we get there; this sketch is the current best guess, not a contract.
 
-## 6.1 Three lifecycles, three mechanisms
+- **The id is the partition key.** UUIDv7 sorts bytewise in time order, so the bulk tables — entries, usage ledger — use `PARTITION BY RANGE (id)` on the uuid id column, with period-boundary UUIDs (zeroed tails) as bounds. No partition column exists anywhere; §1.2's time prefix is the whole mechanism. Registers, `branch_meta`, stats, leases, and sessions stay in a hot unpartitioned catalog. `branch_entries` partitions by `entry_id` with the same bounds, so dropping a period cleans the branch index for free; `branch_meta` stays hot, and base pointers dangling into a dropped period are trimmed lazily on first access.
+- **Pre-pass repair.** Before a period P is dropped, an online repairer makes live state stop referencing it: reparent edges crossing into P onto the nearest retained ancestor, found by an indexed uuid-range query; null any dormant `lane.leaf` decoding into P via a register-seq CAS; force-expire open operations still referencing P register-only — the terminal transaction of §3.13 writing `lane.lastResult`, no synthetic entries, with any live drive stopping through external finalization (§4.9); delete `fact.label` registers whose keys decode into P with one uuid-range delete.
+- **The commit barrier.** Repair races ordinary commits, so the final step is atomic against all of them: `BEGIN; LOCK entries, registers IN ACCESS EXCLUSIVE MODE; <delta repair for anything committed since the online pass>; ALTER TABLE … DETACH PARTITION p; COMMIT;` — plain `DETACH`, not `CONCURRENTLY`, precisely because it is transactional under the lock; the `DROP TABLE` happens later, unhurried. The barrier makes repair-plus-detach one linearization point: every commit sees either the fully attached period or a fully repaired store without it.
+- **The default partition.** A `DEFAULT` partition absorbs stray inserts whose ids predate every attached partition — an ancient `pendingNextRun` item consumed years after its mint still places under its reserved id and simply lands there. Nothing errors and nothing is lost; the default partition stays small and is never dropped.
+- **Register access under an external repairer.** A backend that admits an external repairer must perform register reads and CAS checks inside the commit transaction itself, so a repairer holding the barrier cannot interleave between a harness's read and its dependent write. The shipping backends need no such rule: single-writer sessions have no external repairer.
 
-```text
-operation cleanup      register deletion at the terminal TX     continuous, invisible (§3.13)
-context compaction     provider-context only, never deletion    an ordinary entry (§2.5)
-conversation retention
-  ├─ partition expiry     drop whole retired periods            fast, routine TTL (§6.2)
-  └─ precise rewrite      copy-retained-and-swap                surgical, administrative (§6.6)
-```
-
-They never couple. Operation cleanup is orchestration hygiene: it deletes registers, never entries or ledger rows, and finishes inside the terminal transaction. Compaction changes what a provider sees, never what storage holds: a compaction entry is one more append, and everything before it stays queryable. Retention alone removes rows — and it consults orchestration state only through the bounded pin scan in §6.3, never through any per-entry lifecycle marker. There are no such markers to maintain, which is why the first two mechanisms can run forever without creating retention work.
-
-## 6.2 Physical layout and the expiry protocol
-
-The §1.7 sketch splits the Postgres database into a hot unpartitioned catalog — registers, `branch_meta`, the partition inventory, stats, leases, sessions — and period-partitioned bulk tables: entries, the usage ledger, branch index rows, the FTS projection. The bulk DDL follows directly from §1.2, because the id *is* the partition key:
-
-```sql
-CREATE TABLE entries (
-  session_id  text,
-  id          uuid,       -- UUIDv7; the time prefix is the partition assignment
-  parent_id   uuid,
-  seq         bigint,
-  type        text,
-  custom_type text,
-  timestamp   bigint,
-  payload     jsonb,
-  PRIMARY KEY (session_id, id)
-) PARTITION BY RANGE (id);
-
--- Bounds are period-boundary UUIDv7s: the boundary timestamp, zeroed tail.
-CREATE TABLE entries_2027_01 PARTITION OF entries
-  FOR VALUES FROM ('<uuid7 2027-01-01T00:00Z, zero tail>')
-              TO   ('<uuid7 2027-02-01T00:00Z, zero tail>');
-```
-
-Two classic partitioning taxes disappear because the key lives inside the id. First, no partition column invades the schema or the primary key: `PRIMARY KEY (session_id, id)` covers the partition key, and because an id determines its partition, per-partition uniqueness is global uniqueness. Second, no global-index fan-out: `getEntries` prunes to one partition from each id's own prefix instead of probing every partition's index after years of monthly partitions — the hottest read path stays one index visit per id. The ledger, branch index rows, and FTS projection partition the same way and die with their entries; §2.6's partition-purity rules keep segment rows in the partitions of the entries they index, so this holds for the branch index by construction.
-
-One database also means one transaction spans hot registers and partitioned entries (§1.7): acceptance, settlement, and terminal transactions keep exactly the shapes Part 3 specifies.
-
-**The expiry protocol.** Dropping period P is not one atomic step, because `DETACH CONCURRENTLY` is not transactional. It is a small recoverable protocol driven by P's inventory row:
-
-```text
-1. preflight   §6.3: refuse while any pin or compaction horizon covers P
-2. seal        mark P frozen in the inventory
-3. aggregate   fold P's per-session usage totals into the inventory
-4. detach      DETACH PARTITION CONCURRENTLY
-5. drop        DROP TABLE; record P's range as retired in the inventory
-```
-
-A crash between steps redoes the step the inventory names; every step is idempotent. Sealing is safe because a passed preflight implies nothing can write into P again: new ids mint with `now()`, and follower ids mint only inside open operations, which preflight already enumerated. The aggregates exist because ledger rows are about to disappear: `session_stats` stays valid (it is already an aggregate), but rebuildability — the rule that projections can always be recomputed from the three stores — now needs the inventory to stand in for the dropped rows, and per-period accounting survives only there.
-
-## 6.3 Pins, preflight, and the compaction horizon
-
-What must block a drop is exactly what retained state still needs. All of it is enumerable from hot registers — nothing requires scanning partitioned data:
-
-- **Unplaced reservations.** Every `pending.entry` key is a UUIDv7; a queued January message not yet consumed pins January (§1.2). `listRegisters("pending.entry")`, decode the keys, take the minimum.
-- **Open-operation reservations.** Reserved response/result/usage ids inside open `op.state` values pin their partitions. Open operations are reachable through `lane.state` registers, so this scan is bounded by lane count.
-- **The compaction horizon.** An open operation must be able to rebuild its provider context, and every lane must stay projectable: context reads the newest compaction at or below the leaf plus everything after it (§2.5). So the hard rule: **a drop may never remove a lane's newest compaction.** Partition P is droppable only if every lane's branch has a compaction — or its root — in a retained partition newer than P. The leaf needs its own check: a late-placed entry (§1.2 rule 4) can put a leaf's prefix *behind* the newest compaction's partition, so preflight also scans every `lane.leaf` register — one hot register per lane — and refuses to drop a partition any leaf decodes into.
-
-Preflight is those three checks. A deployment where they pass drops P with no per-entry bookkeeping, no reference counting, and no scan of P itself.
-
-**Abandoned pins.** A crashed operation nobody resumes, or a queued item nobody consumes or cancels, pins its partitions forever. Policy must therefore include an administrative **force-expiry** for over-age pins, built from machinery that already exists: force-settling an open operation is §4.5's synthetic settlement — interrupted/aborted results under exactly the reserved ids, inbox drained, terminal cleanup, `lane.lastResult` recording the outcome (Part 7 reuses the same mechanism for upgrades). Stale-queue expiry deletes an abandoned `pending.entry` register through the cancellation path (§3.11); a later `cancelQueued` answers `not_found`, which retrying clients already treat as success. Dormant never-compacted lanes either pin storage or fall under an explicit expired-lane policy (§6.4) — a product decision, not a storage decision (Appendix D).
-
-### Worked example — the yes/no dialog
-
-An assistant turn settles in January with one ask-the-user tool call. The result id is minted at settlement as a follower (§1.2), so it carries January's timestamp. The user answers in April; the result entry inserts into the January partition — which the open operation pinned the whole time.
-
-- While the operation is open: January is undroppable, so nothing is ever lost. The cost is retention lag on one partition.
-- If policy force-expires the abandoned operation instead: a synthetic interrupted result lands under the already-reserved January id, beside its assistant. January's pins clear, the partition becomes droppable, and the exchange later disappears **as a unit** — never half of it. That is the follower rule doing its job: at every moment, the assistant and its results are either both retained or both gone.
-
-## 6.4 Retired-boundary semantics
-
-**The retired-range inventory.** Classification needs one datum: which id-prefix ranges are retired. It is the union of two sources — the deployment's partition inventory (partitioned backends only, hot catalog, shared because partitions are shared across sessions) and a per-session retired-range set in the catalog or header (all backends, normally empty). Memory, JSONL, and SQLite never run expiry, so their per-session set becomes non-empty in exactly three ways: a JSONL retention compaction records the ranges it pruned (§6.6), a fork import inherits ranges from a truncated source (below), and the conformance suite populates it directly to make boundary states testable on every backend (Part 9). Classification is then uniform everywhere, exactly as §1.2 states: parent present → continue; parent missing with a retired prefix → boundary; parent missing with a live prefix → corruption.
-
-**Traversal.** Scans stop cleanly at a boundary (§2.5); segment chains truncate lazily on first access, with no eager `branch_meta` rebuild at drop time (§2.6). The public marker whose shape §5.3 defers here is one `SessionTree` method, present on all backends and trivially null wherever the inventory is empty:
-
-```ts
-/** Non-null when the path from start (default: the view's lane leaf) toward
-    the root ends at a retention boundary rather than a true root (§2.5). The
-    partition is the parentId's own time prefix. */
-getRetentionBoundary(start?: string): Promise<{ parentId: string } | null>;
-```
-
-Bulk finders stay `Entry[]`-shaped; a serving layer that pages branch scans attaches `truncatedAt: { parentId }` by reading the last returned entry's `parentId` against the inventory, or by calling this method — the two always agree. What makes the marker sufficient: after `findEntryOnBranch({ customType })` returns `undefined`, one `getRetentionBoundary()` call distinguishes "never set" from "possibly expired".
-
-**Expired lanes.** Under the default preflight an expired lane cannot exist — the compaction horizon and the leaf scan keep every lane's leaf retained (§6.3). The condition arises only when a deployment adopts a policy that expires dormant never-compacted lanes rather than letting them pin storage. When adopted: a lane whose leaf id decodes to a retired period enters an explicit **expired** condition on first access — detected lazily by the owning harness, never marked by the daemon (§6.7). Reads report the condition; state-mutating calls fail with the expected error `LaneExpired` — with one exemption: `navigateTree` to a retained entry is the rebase operation and is always admitted — after which the lane is ordinary again. Whether a deployment also auto-rebases to the boundary is the open product question (Appendix D).
-
-**Labels.** A `fact.label` register whose key decodes to a retired period reads as absent. The owning harness may delete it lazily on that access; an eager pre-drop sweep by each owning harness — never the daemon (§6.7) — is a legal optimization (the keys are ids and classify with no lookup) but never required, because a stale label register is harmless.
-
-**Forks — resolving §2.7.** A fork whose source path crosses a boundary copies exactly what a scan returns: the boundary entry becomes a retained root in the destination, keeping its original `parentId`. The same import copies the source's relevant retired ranges into the destination's per-session set. That single rule closes the question §2.7 deferred: the destination classifies its inherited dangling references by the ordinary §1.2 rules, on every backend — a Memory, JSONL, or SQLite destination never *retires* anything itself, but it can *hold* a session whose inventory says some ranges are gone, and that is all classification needs. Without the inventory copy, the dangling parent would carry a live-looking prefix and the destination would be indistinguishable from corruption.
-
-## 6.5 What expiry does not do
-
-`retainedTail` copies old messages verbatim into newer compaction entries; branch summaries derive from old content; the FTS projection still indexes retained compactions. **Partition expiry is cost and TTL retention, not erasure** (§0.6). Content originating in a dropped period can survive indefinitely in derived form. A compliance-grade "erase this" must use the precise rewrite, which can apply a content predicate to everything — including copied-forward tails and summaries. This is a contract statement for the serving layer, not an implementation detail.
-
-## 6.6 The precise rewrite
-
-The second mechanism, for everything expiry cannot express: per-branch policies, redacting copied-forward content, pruning abandoned branches, compliance erasure, migrating never-partitioned legacy sessions.
-
-```text
-snapshot  → copy the retained set into a fresh store     O(retained), online
-          → keep recording live writes against the old
-freeze    → seal commit admission briefly
-swap      → apply the small tail, swap, unlink the old
-```
-
-Never `DELETE … NOT IN (keep_set)` over years of rows while holding a write freeze — that stop-the-world is what this design exists to avoid. The copy runs against a coherent snapshot exactly as forks do (§2.8), the freeze covers only the tail replay, and the swap is atomic per backend: a rename, a catalog switch.
-
-On JSONL the operation already exists: snapshot compaction (§1.7) is the same rewrite with a different keep-predicate:
-
-```text
-GC compaction:         keep = live state             drop dead lines
-retention compaction:  keep = live state ∩ policy    also drop pruned entries and
-                                                     usage rows; fold pruned usage
-                                                     into a header aggregate so
-                                                     getStats() totals survive
-                                                     (§1.6); record the pruned
-                                                     ranges in the retired-range
-                                                     inventory (§6.4)
-```
-
-One rewrite path, two filters. Partition expiry remains the partitioned-backend fast path; a JSONL session that wants TTL retention pays O(retained) at compaction time, which is fine at JSONL's scale — coding-agent sessions, not seven-year Slack channels.
-
-## 6.7 Who runs retention
-
-Sessions are owned by one fenced writer (§1.7); date partitions are shared by hundreds of sessions; the retention daemon owns none of them. So the daemon performs **only lease-free global actions** — preflight reads, inventory updates, and DDL. It never takes a session's writer lease and never writes a session's registers. Every per-session consequence is executed lazily by the owning harness on next access: expired-lane detection, label cleanup, branch-chain truncation, usage-aggregate visibility. That single constraint decides the lazy-versus-eager questions in favor of lazy — an eager design would require the daemon to acquire every affected session's lease, turning routine TTL into a coordination problem with every live harness.
-
-Force-expiry (§6.3) is the one retention action that must write session state, so it is not the daemon's: it runs through an owning harness — opened administratively if need be — under the ordinary lease, using the ordinary synthetic-settlement machinery.
-
-What stays open — per-session retention length versus shared date partitions, expired-lane product semantics, the partition of entry-less usage rows, Postgres partition-count operational limits, and measuring the pending-payload double write — is collected in Appendix D.
+Everything else a real deployment would need — retention policy, per-session versus per-deployment periods, operational partition-count limits — is deliberately unspecified until the backend is real.
 
 # Part 7 — Schema evolution
 
 ## 7.1 The problem
 
-Full durability means snapshotting in-flight state, and in-flight state has the shape of *today's* state machine. Ship a new version with a different machine and the durable state written by the old one still exists — mid-run, mid-batch, mid-drain. Most durable-execution systems answer this badly or not at all. This design cannot: sessions are long-lived by intent, and Part 6 plans for years of them.
+Full durability means snapshotting in-flight state, and in-flight state has the shape of *today's* state machine. Ship a new version with a different machine and the durable state written by the old one still exists — mid-run, mid-batch, mid-drain. Most durable-execution systems answer this badly or not at all. This design cannot: sessions are long-lived by intent.
 
 ## 7.2 Why this design shrinks the problem
 
-Migration cost is proportional to what must be converted. The superseded value/history design would have had to convert — or version-read forever — years of dead operation-state values and history rows. This design deleted all of that (§1.8):
+Migration cost is proportional to what must be converted, and this design keeps the convertible surface small (§1.8):
 
 ```text
 what exists at upgrade time            migration burden
@@ -2714,7 +2729,7 @@ pending.entry registers                open-operation inbox items plus
                                        lane-owned queued nextRun items
 ```
 
-Deleting history is what makes migrate-on-open tractable at all: the entire mutable surface is a few dozen current registers. And the fenced single-writer lease (§1.7) means the opening process owns the session exclusively — migration has no concurrency story to solve.
+Because no history is retained, the entire mutable surface is a few dozen current registers — which is what makes migrate-on-open tractable at all. And the fenced single-writer lease (§1.7) means the opening process owns the session exclusively — migration has no concurrency story to solve.
 
 ## 7.3 The mechanism: storage version plus migrate-on-open
 
@@ -2734,97 +2749,70 @@ Chained migrations run under the writer lease before `open()` returns (§2.8). E
 
 JSONL has one wrinkle in each direction. Replay must decode superseded old-shape register lines leniently — as keyed raw JSON, overwrite-by-key only — because pre-migration bytes remain in the file (§1.7). And a migration must trigger snapshot compaction, whose temp-file-and-rename both persists the new header version atomically and retires the old-shape bytes. Between crash and compaction, lenient replay plus idempotent conversion make the intermediate state harmless.
 
-Legacy coding-agent format 3 predates `storageVersion` entirely; it normalizes through Appendix C on load and receives the current version with its first format-4 write.
+Legacy coding-agent format 3 predates `storageVersion` entirely; it normalizes through Appendix B on load and receives the current version with its first format-4 write.
 
-## 7.4 What the version cannot do — and the settlement kernel
+## 7.4 Migrations are total
 
-Register conversion is a field mapping. A state-machine shape change is not. If the next version removes `failure_drain`, or restructures the tool-batch lifecycle, an old `op.state` sitting mid-`failure_drain` has no equivalent in the new machine — "convert the record" is simply not a defined operation, and no encoding trick answers "where does this in-flight operation land?"
+Register conversion is a field mapping; a state-machine shape change is more. If the next version removes `failure_drain`, or restructures the tool-batch lifecycle, an old `op.state` sitting mid-`failure_drain` has no field-by-field equivalent in the new machine. The rule: **migrations are total.** A vN→vN+1 migration translates every register value — lane and fact registers, `pending.entry` payloads, and open operations' `op.meta` and `op.state` included. The author of a state-machine change writes the mapping that carries every reachable old state into a well-defined new one, in the same change, reviewed and tested with it. A state with no natural successor maps to an explicit choice — typically the nearest safe pre-intent state, from which ordinary recovery (§4.5) proceeds. There is no force-settle path and no partial escape hatch.
 
-The escape hatch already exists. §4.5's crash recovery can force-settle any open operation from a tiny fragment of its state: the reserved ids awaiting settlement, the pending-entry ids, and the control status — synthetic interrupted or aborted results under exactly those reserved ids, inbox drained, terminal cleanup, lane idle. Entries and the ledger are untouched. Freeze that fragment as the **settlement kernel**: a minimal, versioned-never projection of the lane's open-operation state that every future version must keep decodable:
-
-```ts
-interface SettlementKernel {
-  operationId: string;
-  kind: "run" | "compaction" | "navigation";
-  control: "running" | "cancel_requested";
-  reservedEntryIds: string[];    // response/result ids awaiting settlement
-  reservedUsageIds: string[];
-  pendingEntryIds: string[];     // inbox + drained + pendingNextRun refs
-}
-```
-
-The kernel is drawn from `op.state` plus the lane's queue refs. `pendingEntryIds` includes `pendingNextRun` so a migration can locate every `pending.entry` register whose payload shape it may need to convert; force-settlement itself still deletes only the operation-owned subset — inbox and drained items, never `pendingNextRun` (§3.13).
-
-The upgrade rule then covers every case:
-
-```text
-per open operation at migration time:
-  semantic migration defined for this transition?  → convert op.state
-  otherwise                                        → force-settle via the kernel:
-                                                     synthetic "interrupted by upgrade"
-                                                     under the reserved ids,
-                                                     terminal cleanup;
-                                                     lane.lastResult records the outcome
-```
-
-Worst case, an in-flight run ends "interrupted" — indistinguishable from a crash, which the application already handles through the ordinary reconciliation path (§3.13, §5.1). No session is ever bricked by a state-machine redesign, and no version ever carries old-machine semantics forward. This is the same machinery Part 6 uses for force-expiry: one synthetic-settlement kernel, two administrative callers.
+This is tractable for the same reason migrate-on-open is tractable at all (§7.2): the entire mutable surface is a few dozen current registers, and migration runs at open under the writer lease, so it sees **quiescent** registers — no drive is running, no effect is in flight, and every `op.state` is exactly the total state some transaction committed. A migration is a pure function over a small, fully enumerable, fully typed set of values.
 
 ## 7.5 The three strata, restated as policy
 
 ```text
 entries + usage      the stability budget goes HERE. Payloads are provider-shaped
                      messages plus three simple structural types; changes must be
-                     read-compatible forever, because partitions cannot be
-                     rewritten at open time — the precise rewrite (§6.6) exists,
-                     but it is administrative, not an open-time step. Custom
+                     read-compatible forever, because years of entries cannot
+                     be rewritten at open time — the precise rewrite (§2.9)
+                     exists, but it is administrative, not an open-time step. Custom
                      entry payloads are the application's contract.
 
 lane / fact          migrate on open, mechanically. A few registers per lane,
 registers            cheap forever.
 
-op.* / pending.*     ephemeral by construction. Migrate when convenient,
-                     force-settle when not. This is where the state machine is
-                     allowed to churn freely between versions.
+op.* / pending.*     ephemeral by construction and few in number. Every
+                     state-machine change ships the total register mapping for
+                     its own states (§7.4). This is where the machine is allowed
+                     to churn between versions, because the mapping cost is
+                     bounded by open operations — usually zero.
 ```
 
 The design conclusion: the volatile part of the system — orchestration — was made ephemeral, and the durable part — the conversation — was made structurally boring. Schema evolution is exactly as hard as the boring part, which is the best available outcome.
 
 # Part 8 — Build order
 
-Build the following vertical slices in order, except SQLite work may proceed after the tree contract stabilizes. Each slice implements the named behavior end to end and adds focused tests for its normal path, every state it introduces, every owned crash boundary, and both orders of owned races. Passing those tests and `npm run check` is its acceptance criterion.
+One shared slice lands the complete type surface; everything after it splits into two independent tracks. **Track S** (storage, search, dev TUI) parallelizes across owners — its slices depend only on slices 1–2 and never on each other. **Track R** (runtime) is sequential, runs entirely against the Memory backend, and never waits on Track S. The tracks cannot block each other.
 
-The current source tree is a work-in-progress implementation of the superseded record-log design. Replace its durable shapes rather than supporting both. Each slice updates or removes incompatible consumers/tests immediately so the repository compiles and `npm run check` passes after every merge; there is no compile-only legacy quarantine. Reuse existing behavior and tests where still valid: compaction preparation/split-turn generation, agent-loop streaming/tool behavior, event buffering, telemetry contracts, repository lifecycle, `BEGIN IMMEDIATE`, and fenced SQLite leases.
-
-If implementation exposes a design contradiction, missing transition, or materially simpler design, stop and send it to the user for review. Do not silently improvise a new durable contract inside a slice.
+Each slice implements its named behavior end to end and adds focused tests for its normal path, every state it introduces, every owned crash boundary, and both orders of owned races. Passing those tests and `npm run check` is its acceptance criterion. If implementation exposes a design contradiction, missing transition, or materially simpler design, stop and send it for review — do not silently improvise a new durable contract inside a slice.
 
 | # | Slice | Implement | Required focused tests |
 |---|---|---|---|
-| 1 | **Single-session Storage** | Write-once entries/usage, registers with first-class set/delete, atomic transactions, UUIDv7 id generator with follower minting, runtime entry/register/custom-message schemas, stats projection, per-session retired-range set plumbing (empty default), Memory backend, shared conformance helpers, and the instrumented-storage decorator (Part 9). | Rollback, sequence order, duplicate ids, register set/delete/recreate, delete-of-absent-key no-op, fact deletion vs JSON `null`, schema validation, unknown custom roles, immutable reads, stats-equals-ledger, follower minting, close. |
-| 2 | **JSONL v4 and format 3** | Single-item/array transaction lines, register set/delete replay, header `storageVersion`, torn-tail handling, snapshot compaction (GC keep-predicate), format-3 read normalization and first-write temp/rename conversion. Replace unfinished current v4 without migration. | Backend conformance, corrupt interior/final lines, whole-array tear, compaction logical-equivalence, every format-3 rule, resolved/unresolved parent paths, aggregate imported usage adjustment. |
-| 3 | **Tree and repositories** | Entries with inline payloads, lane/config/state registers, facts, branch/global queries, context projection, `SessionTree`, repository lifecycle with the `storageVersion` gate at open, coherent branch/tree forks. | Placement, divergence, filters/cursors/stops, custom entries with and without data, context, fork before first attachment, configured fork snapshots/facts/zero ledger. |
-| 4 | **Runtime shell** | Lane/settings mutation lines, total-state validation (idle lanes included), register-seq CAS tokens, `Models.lease` and runtime snapshots, `Effects`, manual scheduler/gate, hook/event primitives, restore inventory (five register reads plus bounded hydration), identity leases, fault/close plumbing. Public operations may still report not implemented. | State/action exhaustiveness, seq-token settlement, parallel scheduler order, hook aggregation, event buffering, gate nesting, zero effects while parked, restore without history reads, idle-lane validation. |
-| 5 | **Minimal no-tool run** | Prompt expansion, `before_run`, atomic acceptance with pending-capture placement, captured request lease/options/thinking inline, payload/response hooks, one generation intent/effect/settlement, usage, the terminal transaction (register cleanup plus `lane.lastResult`), results, basic events/telemetry. | Successful run with final assistant fields, invalid caller/provider/hook output, exact transaction/event order, terminal cleanup completeness and `lastResult`, automatic/manual identical state, close at every boundary. |
-| 6 | **Generation recovery and retry** | Retry waits, unknown-effect recovery, synthetic cap settlement, ordinary stop/error/deferred classification, provider-compliant `aborted`, and failure-drain foundation. Overflow classification remains explicitly unimplemented until slice 12. | Every generation state before/after reopen, caps/backoff, stop/error/aborted/deferred classification, missing identities. |
-| 7 | **Tools** | Refactor existing loop into three phases, bind `AgentHarnessTool` context, durable complete plans, `op.tool_args/{opId}:{stepId}:{i}` registers with batch-completion deletion, replay, sequential/parallel modes, blocked terminate, genuine-length results, tool events/hooks/usage. | Existing loop compatibility plus a built-in context-bound tool, invalid args/results, every planned/pending/completed state, tool-args register lifecycle including crash-leak prefix cleanup, safe/unsafe replay, ordering, termination, abort-ready states. |
-| 8 | **Inbox, configuration, and writes** | `nextRun`/steer/follow-up via `pending.entry` registers, `cancelQueued` triage (`not_found`), durable drain markers, checkpoint consumption with register deletion, immediate total config setters, deferred tree writes, adjustments. | Capture/cancel/consume races, repeated cancellation answering `not_found`, one-at-a-time crash after one drain, register/entry exclusivity at every boundary, custom-write continuation, config-step race, writes surviving reopen. |
-| 9 | **Abort, close, and failure drain** | Orthogonal control, drained ids in control with surviving pending registers, signalling, per-phase reconciliation, best-effort cancellation of the current deferred source, waiters/run-when-idle, controlled-crash close, terminal deletion of inbox-and-drained registers. | Abort at every existing state, repeated abort, deferred cancellation, live/restore tool outcomes, writes before finish, drained-register survival and terminal deletion, close races, failure revived only by projecting input. |
-| 10 | **Deferred provider redemption** | One poll per resume, copied configuration/options inline, leased request hooks, exact source lineage/equality, fresh intent after unknown poll, mismatch-to-error, ready tools, and advancement of slice 9 cancellation to each newest source. | Repeated pending, ready/error/aborted/mismatch, crash positions, no cap/backoff/loop, newest-handle cancellation. |
-| 11 | **Manual compaction** | Adapt existing compaction implementation to reserved-lane admission, the `op.preparation/{opId}:{taskId}` register, total structural state, hook/generated sources, leased nested request intents/usage, retained tail, retry/recovery/abort. | Empty/reservation race, hook decline/result, crash after request one of split-turn generation, every state/crash, no public summary-stream messages. |
-| 12 | **Threshold and overflow compaction** | In-run structural decision, durable once-per-trigger threshold marker, continuation preservation, all overflow predicates, atomic response/preparation publication, specified normalization/projection, one overflow recovery flag, bounded second failure. | Threshold decline/empty across reopen, all overflow classifier/preparation inputs, no overflow tool plan, genuine length, crash/reopen at every transition. |
-| 13 | **Navigation** | Validation, summarized decision/generation, and one final transaction combining move/summary/leaf/label with the terminal writes; summary-only navigation hook. | Root/current/unknown rejection, summarized/unsummarized paths, final leaf at summary, abort race, exact atomic publication including register cleanup. |
-| 14 | **SQLite** | Rework the current unfinished schema/backend directly to entries/registers/usage-ledger tables, transactions, stats, leases, catalog `storageVersion`, repository operations, segmented branch cache, entry-id-keyed FTS search projection, and explicit repair. No values table, no `slot_history`, no `getLog`, no migration. | Shared conformance, `BEGIN IMMEDIATE`, fencing, query plans, segment-chain soundness, register upsert/delete, placed-only search, forks/search/stats/repair. |
-| 15 | **Schema version and migrations** | Chained migrate-on-open under the writer lease, migration registry, settlement-kernel decode and the force-settle path, JSONL lenient old-shape replay and mandatory post-migration compaction, refuse-newer. | Version gate (equal/older/newer), chained idempotent migrations across crash, kernel force-settle leaving a valid idle lane plus `lastResult`, lenient replay of superseded shapes, compaction retiring old bytes. |
-| 16 | **Retention scaffold** | Retired-range inventory on all backends (empty default), boundary classification in scans/segments/forks, `getRetentionBoundary` and truncation markers, fork range inheritance, expired-lane condition with `LaneExpired` and the `navigateTree` rebase exemption, lazy label handling, JSONL retention compaction with the pruned-usage header aggregate, pin-enumeration preflight helpers. Design-complete; the Postgres backend, partition DDL, and the retention daemon are deferred. | Boundary vs corruption discrimination, truncation markers, boundary-crossing forks including inherited ranges on never-retiring destinations, expired-lane surfacing and rebase, retention-compaction keep-predicate and stats aggregate, preflight pin enumeration including the `lane.leaf` scan. |
-| 17 | **Surface completion** | Complete snapshots/watch, event catalog/order/filtering, telemetry instrumentation/schema freshness, public exports, backend parity, and remove any remaining dead scaffold code. | Snapshot/event gap, attach during every live state, sensitive-event/content-free-telemetry assertions, full race/crash matrix on all backends. |
+| 1 | **Types** | The complete shared type surface, behavior-free: `Entry`/`Register`/`UsageRow` and `RegisterValues` including the full Part 3 state tree, `Write`/`Transaction`/`Storage`/`Session`/`SessionTree`/`SessionRepo`, scans, the id-generator and `SessionSearchService` interfaces, `storageVersion`, and the Part 5 surface types (results, errors, events, snapshots, hooks). Delete `packages/agent/src/harness/**` and its tests outright; patch remaining consumers. The repo may not compile mid-slice; it compiles again — `npm run check` clean — at the end. | Type-level only; no behavior. |
+| 2 | **Session layer, Memory, conformance** | Entry materialization with inline payloads, lane/config/state registers, facts, branch/global queries, context projection, `SessionTree`/views, codec plus runtime entry/register/custom-message schemas, UUIDv7 generator with follower minting, stats projection, the Memory backend with repository lifecycle/forks and the `storageVersion` gate at open, the backend conformance suite, and the instrumented-storage decorator (Part 9). | Rollback, sequence order, duplicate ids, register set/delete/recreate, delete-of-absent-key no-op, fact deletion vs JSON `null`, schema validation, unknown custom roles, immutable reads, stats-equals-ledger, follower minting, placement, divergence, filters/cursors/stops, custom entries with and without data, context projection, fork before first attachment, configured fork snapshots/facts/zero ledger, close. |
+| S1 | **JSONL** | Format 4: single-item/array transaction lines, register set/delete replay, header `storageVersion`, torn-tail handling, snapshot compaction (GC keep-predicate), the file-based repository, format-3 read normalization and first-write temp/rename conversion with id re-minting (Appendix B). Replace the unfinished current v4 without migration. | Backend conformance, corrupt interior/final lines, whole-array tear, compaction logical-equivalence, every format-3 rule including id re-minting and reference remapping, resolved/unresolved parent paths, aggregate imported usage adjustment. |
+| S2 | **SQLite** | One database file per session: entries/registers/usage-ledger tables, one-row session/lease rows, transactions, `storageVersion`, the file-based repository, segmented branch cache, `VACUUM INTO`-based rewrite/fork, and explicit repair. No values table, no `slot_history`, no `getLog`, no search projection, no migration. | Shared conformance, `BEGIN IMMEDIATE`, fencing, query plans, segment-chain soundness, register upsert/delete, forks/stats/repair. |
+| S3 | **Search** | The standalone `SessionSearchService` (§2.8): durable per-session cursors, `sync()` enumeration and catch-up, debounced `notify()`, `remove()`/reconciliation, `(sessionId, storeGeneration)` cursor keys, and the reference SQLite FTS5 implementation working over any backend's repository. | Cursor catch-up from empty against existing sessions, idempotent re-index after crash mid-batch, notify/sweep equivalence, sessions-vs-entries queries and ranking, removal and reconciliation, shared-index multi-process discipline. |
+| S4 | **Dev TUI and Client** | A minimal `AgentClient` over one lane — `LaneSnapshot` plus `watch()` events, `prompt`/`steer`/`followUp`/`abort`/`resume`/`cancelQueued`, `lane.lastResult` read — and a throwaway alt-screen TUI on `packages/tui`: transcript from snapshot and events, input box, status/queue display, abort key. Built first against a scripted fake client on the slice-1 types; binds to the real harness as Track R lands. Not final. | Compiles; fake-client smoke test. No durability obligations. |
+| R1 | **Runtime shell** | Lane/settings mutation lines, total-state validation (idle lanes included), register-seq CAS tokens, runtime snapshots, `Effects`, manual scheduler/gate, hook/event primitives, restore inventory (five register reads plus bounded hydration), dispatch-time identity resolution, fault/close plumbing. Public operations may still report not implemented. | State/action exhaustiveness, seq-token settlement, parallel scheduler order, hook aggregation, event buffering, gate nesting, zero effects while parked, restore without history reads, idle-lane validation. |
+| R2 | **Minimal no-tool run** | Prompt expansion, `before_run`, atomic acceptance with pending-capture placement, captured request options/thinking inline, payload/response hooks, one generation intent/effect/settlement, usage, the terminal transaction (register cleanup plus `lane.lastResult`), results, basic events/telemetry. | Successful run with final assistant fields, invalid caller/provider/hook output, exact transaction/event order, terminal cleanup completeness and `lastResult`, automatic/manual identical state, close at every boundary. |
+| R3 | **Generation recovery and retry** | Retry waits, unknown-effect recovery, synthetic cap settlement, ordinary stop/error/deferred classification, provider-compliant `aborted`, and failure-drain foundation. Overflow classification remains explicitly unimplemented until R9. | Every generation state before/after reopen, caps/backoff, stop/error/aborted/deferred classification, missing identities. |
+| R4 | **Tools** | Refactor the existing loop into three phases, bind `AgentHarnessTool` context, durable complete plans, `op.tool_args/{opId}:{stepId}:{i}` registers with batch-completion deletion, replay, sequential/parallel modes, blocked terminate, genuine-length results, tool events/hooks/usage. | Existing loop compatibility plus a built-in context-bound tool, invalid args/results, every planned/pending/completed state, tool-args register lifecycle including crash-leak prefix cleanup, safe/unsafe replay, ordering, termination, abort-ready states. |
+| R5 | **Inbox, configuration, and writes** | `nextRun`/steer/follow-up via `pending.entry` registers, `cancelQueued` triage (`not_found`), durable drain markers, checkpoint consumption with register deletion, immediate total config setters, deferred tree writes, adjustments. | Capture/cancel/consume races, repeated cancellation answering `not_found`, one-at-a-time crash after one drain, register/entry exclusivity at every boundary, custom-write continuation, config-step race, writes surviving reopen. |
+| R6 | **Abort, close, and failure drain** | Orthogonal control, drained ids in control with surviving pending registers, signalling, per-phase reconciliation, best-effort cancellation of the current deferred source, waiters/run-when-idle, controlled-crash close, terminal deletion of inbox-and-drained registers, and the external-finalization stop on absent operation registers (§4.9). | Abort at every existing state, repeated abort, deferred cancellation, live/restore tool outcomes, writes before finish, drained-register survival and terminal deletion, close races, an externally finalized operation stopping the drive without writes and resolving from `lastResult`, failure revived only by projecting input. |
+| R7 | **Deferred provider redemption** | One poll per resume, copied configuration/options inline, per-poll request hooks, exact source lineage/equality, fresh intent after unknown poll, mismatch-to-error, ready tools, and advancement of R6 cancellation to each newest source. | Repeated pending, ready/error/aborted/mismatch, crash positions, no cap/backoff/loop, newest-handle cancellation. |
+| R8 | **Manual compaction** | Reserved-lane admission, the `op.preparation/{opId}:{taskId}` register, total structural state, hook/generated sources, nested request intents/usage, retained tail, retry/recovery/abort. | Empty/reservation race, hook decline/result, crash after request one of split-turn generation, every state/crash, no public summary-stream messages. |
+| R9 | **Threshold and overflow compaction** | In-run structural decision, durable once-per-trigger threshold marker, continuation preservation, all overflow predicates, atomic response/preparation publication, specified normalization/projection, one overflow recovery flag, bounded second failure. | Threshold decline/empty across reopen, all overflow classifier/preparation inputs, no overflow tool plan, genuine length, crash/reopen at every transition. |
+| R10 | **Navigation** | Validation, summarized decision/generation, and one final transaction combining move/summary/leaf/label with the terminal writes; summary-only navigation hook. | Root/current/unknown rejection, summarized/unsummarized paths, final leaf at summary, abort race, exact atomic publication including register cleanup. |
+| R11 | **Schema version and migrations** | Chained migrate-on-open under the writer lease, migration registry with total register mappings — open operations' `op.meta`/`op.state` included (§7.4), JSONL lenient old-shape replay and mandatory post-migration compaction, refuse-newer. | Version gate (equal/older/newer), chained idempotent migrations across crash, an open-operation state mapped across a state-machine change and resuming correctly, lenient replay of superseded shapes, compaction retiring old bytes. |
+| R12 | **Surface completion** | Complete snapshots/watch, event catalog/order/filtering, telemetry instrumentation/schema freshness, public exports, backend parity, and remove any remaining dead scaffold code — including the S4 fake client. | Snapshot/event gap, attach during every live state, sensitive-event/content-free-telemetry assertions, full race/crash matrix on all backends. |
 
 Existing source guidance:
 
-- `packages/agent/src/harness/session/**` and the old record reducer/tests: slices 1–3. Remove incompatible reducer code as soon as slice 1 replaces its inputs; do not preserve both durable models.
-- `packages/agent/src/harness/agent-harness.ts` and new small transition/effects modules: slices 4–13 and 15–17.
-- `packages/agent/src/agent-loop.ts`: preserve behavior while slice 7 extracts phases.
-- `packages/agent/src/harness/compaction/**`: adapt, do not rewrite gratuitously, in slices 11–13.
-- `packages/session-backends/sqlite-node`: slice 14; retain working transaction and lease primitives.
-- Existing tests are evidence, not authority. Keep those that assert unchanged behavior and replace those tied to the record-log format.
+- `packages/agent/src/harness/**` and all of its tests are **deletable outright** in slice 1 — no obligation to adapt anything. Salvaging pieces (the compaction preparation/split-turn algorithms for R8–R9, session/codec fragments) is optional and never required.
+- `packages/agent/src/agent-loop.ts`: preserve behavior; R4 extracts its phases.
+- `packages/session-backends/sqlite-node`: S2 may keep the working transaction and lease primitives or start clean.
+- Telemetry contracts (`packages/telemetry`, the agent-owned schemas) remain authoritative.
+- Existing tests are evidence, not authority. Keep those that assert unchanged behavior; delete the rest with the code they tested.
 
 # Part 9 — Invariants and tests
 
@@ -2833,10 +2821,10 @@ Existing source guidance:
 Storage:
 
 1. Entries and usage rows are **write-once** and share one session-wide id namespace. Writing either kind under any existing id is corruption.
-2. Transactions are all-or-none, with consecutive `seq`. `seq` is monotonic session-wide.
+2. Transactions are all-or-none, with strictly increasing `seq` in write order; gaps are legal. `seq` is monotonic session-wide.
 3. Registers are the only mutable state. A register delete removes the key; there are no tombstones, and JSON `null` is a legal value only where a namespace's type permits it.
 4. **Every payload lives in exactly one place**: an entry, a register, or the ledger. There is no third place data can hide.
-5. No read on a hot path may fold history or infer state from an absent value — no history exists to fold — and no query may be a table scan.
+5. No read on a hot path may fold history or infer state from an absent value — no history exists to fold. Execution, recovery, and branch hot paths must be index-driven; inventory and debugging APIs page through indexes.
 
 Tree:
 
@@ -2844,8 +2832,8 @@ Tree:
 7. An entry either decodes against its type's runtime schema or is corruption. Only a custom entry may omit payload data.
 8. Configuration and orchestration never enter the tree. Deleting every `op.*` and `pending.entry` register must leave a complete, valid conversation and ledger.
 9. A lane's leaf moves only by append or navigation.
-10. A branch segment chain, followed to its end, yields the full root path — up to a retention boundary, where it stops cleanly (§2.6).
-11. A missing parent whose id prefix is in a retired range is a retention boundary; a missing parent with a live prefix is corruption (§1.2, §6.4).
+10. A branch segment chain, followed to its end, yields the full root path (§2.6).
+11. A missing parent is corruption — always (§1.2).
 
 Operations:
 
@@ -2856,10 +2844,9 @@ Operations:
 16. Only terminal transitions construct a `LaneLastResult`. A terminal outcome is observable once through the live promise and thereafter through `lane.lastResult` until the next terminal transaction on that lane; recovery never reads it.
 17. At most one operation is open per lane. Two is corruption.
 18. `overflowRecoveryUsed` is `true` only after overflow compaction. A transition that adds projecting conversational input or tool results and requires an assistant writes `false`; an unprojected custom write preserves it.
-19. **A committed response with `stopReason: "aborted"` must have `control.status === "cancel_requested"` in the same operation state.** Providers must comply with the harness-owned signal contract; violation is corruption.
-20. Current-state validation (§3.3) runs on every decoded latest lane/operation state before execution — idle lanes included (§4.4). `lane.lastResult` never determines an open operation's next action, and the retired-range inventory's sole recovery role is boundary classification of missing entries (invariant 11).
-
-Everything that used to require a bounded historical validity audit is now either unrepresentable in the types, deleted by the terminal transaction, or covered by one of the above.
+19. **The settlement transaction that commits a response with `stopReason: "aborted"` must, in that same transaction, write an operation state with `control.status === "cancel_requested"`.** The invariant is scoped to the committing transaction — later terminal cleanup or forks may remove the state without violating it. Providers must comply with the harness-owned signal contract; violation is corruption.
+20. Current-state validation (§3.3) runs on every decoded latest lane/operation state before execution — idle lanes included (§4.4). `lane.lastResult` never determines an open operation's next action.
+21. At most one terminal transaction ever commits per operation. A drive whose conditional commit or reload finds its operation's registers absent stops without writing and resolves from `lane.lastResult` (§4.9).
 
 ## 9.2 Race catalog
 
@@ -2895,13 +2882,12 @@ One corruption assertion constructs an `aborted` response with running control d
 **Cross-cutting:**
 
 - **Backend conformance.** One suite, three backends, identical results — identical query results, register states, and stats after every scenario, including register set/delete/recreate semantics and torn-transaction handling. Write-order assertions use the instrumented decorator, never a durable log.
-- **Retention boundaries.** Exercised via the per-session retired-range set (§6.4) on all three backends: boundary-versus-corruption discrimination, clean scan stops with truncation markers, `getRetentionBoundary`, segment-chain boundary stops, boundary-crossing forks with inherited ranges on never-retiring destinations, expired-lane surfacing with the `navigateTree` rebase exemption, and labels reading as absent.
 - **Drive equivalence.** The same scenario in automatic and manual drive must produce byte-identical durable state.
 - **Signal ownership.** No public surface accepts a signal; a `before_request` patch carrying one has it stripped. Assert by type and by test.
-- **Ledger completeness.** Every settled attempt commits its response and its usage. Failed structural attempts retain their cost. `getStats()` equals the ledger sum after every commit — and, after a JSONL retention compaction, the header aggregate plus surviving rows. A fork starts at zero.
+- **Ledger completeness.** Every settled attempt commits its response and its usage. Failed structural attempts retain their cost. `getStats()` equals the ledger sum after every commit. A fork starts at zero.
 - **Query-plan guards.** `EXPLAIN QUERY PLAN` for `scanBranch` matches §1.7 exactly — no `entries` scan or temporary ordering b-tree. Segment tests assert copied rows are bounded by the newest compaction interval.
 - **Transaction discipline.** Assert every SQLite transaction opens with `BEGIN IMMEDIATE`. Add a regression test that reads, lets a second connection commit, then writes — it must succeed, and would fail with `database is locked` under a deferred `BEGIN`.
-- **Segment chain soundness.** Build a chain by alternating branch-and-append across several compactions, then assert that a full-to-root scan through the chain returns exactly the entries a flat branch would, with no duplicates and no gaps — and, with a retired range recorded, that the scan stops cleanly at the boundary. Both §2.6 rules — resolve-through-base coverage and the chain-searched newest compaction — fail this test when violated, and fail silently without it.
+- **Segment chain soundness.** Build a chain by alternating branch-and-append across several compactions, then assert that a full-to-root scan through the chain returns exactly the entries a flat branch would, with no duplicates and no gaps. Both §2.6 rules — resolve-through-base coverage and the chain-searched newest compaction — fail this test when violated, and fail silently without it.
 
 ---
 
@@ -2920,47 +2906,17 @@ One corruption assertion constructs an `aborted` response with running control d
 | **Repeat-sensitive effect** | One whose repetition is observable outside the harness. |
 | **Operation state** | The complete state of one operation at one moment — the `op.state` register, the program counter. |
 | **Reserved id** | An id minted before its content exists: a string in `op.state` (settlement family) or a `pending.entry` key (queued content). |
-| **Follower id** | An id minted with its leader's 48-bit timestamp so a call/result group shares a partition. |
+| **Follower id** | An id minted with its leader's 48-bit timestamp so a call/result group shares one time prefix (§1.2). |
 | **Lane mutation line** | Per-lane serialization point where all state-dependent mutations queue. |
 | **Control** | Orthogonal cancellation flag: `running` or `cancel_requested`. |
 | **Checkpoint** | The state between turns where queues, writes, and finishing are decided. |
 | **Continuation** | Durable answer to "does this run still owe an assistant turn?" |
 | **Terminal transaction** | The commit that deletes an operation's registers, writes `lane.lastResult`, and clears `currentOperationId`. |
 | **Segment** | A branch-index range that references an older branch instead of copying it. |
-| **Partition** | The period a row belongs to on a partitioned backend, read from its id's time prefix. |
-| **Retention boundary** | A missing parent whose id prefix is in a retired range; a clean traversal stop, not corruption. |
-| **Retired-range inventory** | The deployment partition inventory united with a per-session retired-range set; the classification input for boundaries. |
-| **Settlement kernel** | The versioned-never fragment of open-operation state sufficient to force-settle it in any future version. |
+| **External finalization** | A terminal transaction committed from outside the live drive; the drive detects absent registers, stops without writing, and resolves from `lane.lastResult` (§4.9). |
+| **Precise rewrite** | The administrative copy-retained-and-swap rebuild of a session store — the sole sanctioned path that removes entries or usage rows (§2.9). |
 
-# Appendix B — Changes from agent-harness-spec.md
-
-| Change | Reason |
-|---|---|
-| Entries replace the value/node split; placement and payload are one row | The differing birth times that motivated the split are covered by two reservation regimes (§2.2); removes the join, `valueId`, value GC, and the old-value-under-new-partition hazard |
-| Registers hold values directly, with first-class delete; `slot_history` and `getLog` removed | Recovery reads only current state; durable write history was pure overhead. Tier B's oracle is an instrumented-storage decorator |
-| `FinishedState` removed; terminal transactions delete `op.*` and operation-owned pending registers; `lane.lastResult` added | A finished session holds exactly the conversation, the ledger, and lane/fact registers — nothing to collect — while outcomes stay observable after a crash |
-| Queue items are single entry ids; `pending.entry` registers hold unplaced payloads | `{ nodeId, valueId }` collapses to one string; cancellation deletes content outright; the one deliberate double write is paid only by queued items |
-| Usage is a first-class append-only store (`UsageRow`) | Billing is decoupled from orchestration and survives terminal cleanup and aborts |
-| Ids are UUIDv7; the partition is the id's time prefix; follower minting; `PARTITION BY RANGE (id)` | Every reference is self-describing with no partition columns; native pruning; call/result groups stay atomic under expiry |
-| Partition-pure branch segments (append and diverge rules) | Index rows live and die with their partition; drops never gap retained scans |
-| `queue.disposition` removed; `cancelQueued` triage is `cancelled`/`already_consumed`/`not_found`; `UnknownQueueItem` and `already_cleared` dropped | One immortal register per cancelled item bought only a rarely needed distinction; `not_found` is retry-safe |
-| Fact deletion is real register deletion; no tombstones | Delete is a first-class write; JSON `null` stays a legal custom value |
-| CAS tokens are register seqs (`operationStateSeq`, `laneStateSeq`, expected `lane.config` seq) | State values no longer exist; the linearization is unchanged, only the token |
-| Configuration, stream options, and retry policy are inline in operation-state contexts | No values table to point into; restore reports missing identities without resolving anything |
-| `op.tool_args/{opId}:{stepId}:{i}` and `op.preparation/{opId}:{taskId}` registers replace args/preparation value ids | Deterministic keys; deleted at batch completion and by the terminal prefix scan, which also catches crash-leaked keys |
-| Abort-drained pending registers survive until the terminal transaction | `AbortResult` and post-crash `SuspendedOperation.aborting` dereference the drained payloads; snapshot queues exclude them |
-| `RecordUsageResult { usageId }`; the `usage` event carries the ledger row | Value ids are gone; the row already carries its durable `seq` |
-| `entry_added`, `findEntries`, `getEntry`, `appendCustomEntry`, `EntryProjector` renames | jot part 9 nomenclature: one concept, one continuity name |
-| `getLastResult()` and the `lane.lastResult` read path | Post-crash outcome reconciliation, including outcomes the tree cannot reconstruct |
-| Restore validates idle lanes too (leaf plus `pendingNextRun` registers) | Idle lane state is current state; corruption there must not wait for the next operation to surface |
-| `PendingEntry.payload` optional; tool-reported usage ids mint at commit | Custom entries may carry no data; nothing reserves a tool usage id |
-| Retention and partitioning specified (Part 6): recoverable expiry protocol, pins/preflight including the `lane.leaf` scan, retired-range inventory, expired lanes with `LaneExpired` and the `navigateTree` rebase exemption, truncation markers, precise rewrite | Long-lived deployments need routine TTL cost control that never touches orchestration correctness, plus a surgical path for what TTL cannot express |
-| Schema evolution specified (Part 7): `storageVersion`, migrate-on-open, settlement kernel | In-flight state must never brick a session across state-machine redesigns |
-| JSONL snapshot compaction | Register overwrites append in a log-structured file; physical reclamation is a rewrite, shared with retention compaction |
-
-The interpreter, effects boundary, hooks, events, classifier, abort/close semantics, context projection, race catalog, and format-3 normalization carry from the base spec with mechanical renames; they are restated in full so this specification is self-contained with the named source types.
-
-# Appendix C — Coding-agent v3-format compatibility
+# Appendix B — Coding-agent v3-format compatibility
 
 "v3" in this appendix names the legacy coding-agent JSONL session format, not this document. Old coding-agent v3 JSONL files must open unchanged and restore idle. Normalization on load:
 
@@ -2974,16 +2930,12 @@ The interpreter, effects boundary, hooks, events, classifier, abort/close semant
 - v3 ISO timestamps convert to Unix milliseconds.
 - A v3 `parentSession` path resolves to an available parent header id; otherwise metadata and first-write conversion preserve it as `legacyParentSessionPath`.
 - On first format-4 write, append one aggregate adjustment usage row with `details: { source: "v3-import" }`, summing v3 node usage so ledger-derived totals remain unchanged.
-- Legacy v3 ids are preserved verbatim and are not UUIDv7s. This is sound on the shipping backends: prefix classification is consulted only against the retired-range inventory, which is empty for imported sessions (§6.4), and §6.6 retention compaction is prohibited on sessions containing legacy ids — they must go through the precise rewrite first. Moving such a session onto a partitioned backend goes through the precise rewrite (§6.6), which is where legacy sessions acquire partitionable ids.
+- Legacy v3 ids are re-minted at import: each entry gets a UUIDv7 whose prefix is the legacy entry's own timestamp (random tail for uniqueness), preserving time order and §1.2's every-id-is-time-prefixed property. All references the format knows are remapped — parent chains, `main`'s leaf, label keys, `fromId`, usage `entryId`. Ids embedded in opaque payloads (custom entry data, `details`, message text) are not rewritten; the opaque-payload contract (§1.2) already covers them.
 
 Read-only open leaves the file unchanged and computes stats from normalized entry snapshots. The first format-4 write persists normalization through a temporary file and atomic rename over the original path, including the aggregate adjustment so subsequent stats are ledger-derived, and stamps the current `storageVersion` (§7.3). A fork from an unconfigured read-only v3 session follows §2.7 and leaves destination `main` for first harness attachment to seed.
 
-# Appendix D — Open questions
+# Appendix C — Open questions
 
 1. **Repairing a missing model captured inside an open operation.** Registering the same provider/model identity unblocks it without changing state. Replacing it with a different durable identity needs an explicit repair API and is not silently performed by `setModel`.
 2. **Overflow detection remains heuristic.** The normalization specified in §3.7 is authoritative. Preserve the original reason in `errorMessage` for diagnosis.
-3. **Per-session retention length versus shared date partitions.** Retention-class table families versus one policy per deployment (§6.7).
-4. **Expired-lane product semantics.** The mechanism — `LaneExpired`, the `navigateTree` rebase exemption — is specified (§6.4); whether a deployment auto-rebases to the boundary, exposes an explicit expiry state, or both is a product decision.
-5. **Usage rows with no entry.** Failed structural attempts and adjustments partition by mint date like everything else; whether they belong there or in the hot catalog (epoch-of-operation versus hot) is unresolved (§6.7).
-6. **Postgres partition count and operational limits.** Period length, partition maintenance at scale, and inventory growth need operational validation before the fourth backend ships.
-7. **Pending-payload write amplification.** The deliberate double write (§1.8) is paid only by queued items; measure it for pathological payloads before optimizing (`INSERT … SELECT` placement exists on SQL backends, eager compaction on JSONL).
+3. **Pending-payload write amplification.** The deliberate double write (§1.8) is paid only by queued items; measure it for pathological payloads before optimizing (`INSERT … SELECT` placement exists on SQL backends, eager compaction on JSONL).

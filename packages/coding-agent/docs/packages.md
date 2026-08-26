@@ -38,7 +38,7 @@ pi update npm:@foo/bar      # update one package
 pi update --extension npm:@foo/bar
 ```
 
-These commands manage pi packages and `pi update` can update the pi CLI installation. To uninstall pi itself, see [Quickstart](quickstart.md#uninstall).
+These commands manage pi packages and `pi update` can update the pi CLI installation. For experimental installer-managed installations, `pi update` installs the exact checked version into a staged, lockfile-backed release and activates it only after verification, leaving the current release intact if the update fails. Managed installations do not support `--force`; rerun the installer to repair one. To uninstall pi itself, see [Quickstart](quickstart.md#uninstall).
 
 When running from a DysektAI fork source checkout, `pi update --self` checks only the latest `DysektAI/pi-fork` GitHub release. When a newer release is available (or `--force` is used), it fetches `origin/local`, switches to `local`, fast-forwards it, runs `npm ci --ignore-scripts`, and rebuilds the monorepo. The fast-forward merge fails safely if `local` has diverged from `origin/local`, protecting local-only commits. When already current it only performs the release check and exits without rebuilding. It never falls back to the upstream package channel and does not run `fork-sync.sh`; upstream integration remains a maintainer operation. npm/pnpm/yarn/Bun global installs continue to use the upstream package feed. See the repository root `FORK.md`.
 
@@ -132,7 +132,7 @@ Add a `pi` manifest to `package.json` or use conventional directories. Include t
 }
 ```
 
-Paths are relative to the package root. Arrays support glob patterns and `!exclusions`.
+Paths are relative to the package root. Arrays support glob patterns and `!exclusions`. Positive manifest globs discover visible paths in lexical order. List dot-prefixed paths directly. If a glob would need to continue through a symlink, list the symlinked resource root directly.
 
 ### Gallery Metadata
 

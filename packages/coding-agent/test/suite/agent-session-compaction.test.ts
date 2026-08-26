@@ -1,8 +1,11 @@
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
 	type AssistantMessage,
+	type Context,
 	createAssistantMessageEventStream,
 	fauxAssistantMessage,
 	type Model,
+	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateTokens } from "../../src/core/compaction/index.ts";
@@ -47,10 +50,15 @@ function createAssistant(
 	};
 }
 
-function useSummaryStreamFn(harness: Harness, summary: string): () => number {
+function useSummaryStreamFn(
+	harness: Harness,
+	summary: string,
+	onRequest?: (context: Context, options: SimpleStreamOptions | undefined) => void,
+): () => number {
 	let callCount = 0;
-	harness.session.agent.streamFunction = (model) => {
+	harness.session.agent.streamFunction = (model, context, options) => {
 		callCount++;
+		onRequest?.(context, options);
 		const stream = createAssistantMessageEventStream();
 		queueMicrotask(() => {
 			const message: AssistantMessage = {
@@ -246,6 +254,34 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.faux.state.callCount).toBe(1);
 	});
 
+	it("uses the standalone compaction request context", async () => {
+		const harness = await createHarness({ settings: { compaction: { keepRecentTokens: 1 } } });
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+
+		const transformContext = vi.fn(async (messages: AgentMessage[]) => messages);
+		harness.session.agent.transformContext = transformContext;
+		harness.session.agent.sessionId = "active-routing-session";
+		harness.session.agent.transport = "websocket";
+
+		let requestContext: Context | undefined;
+		let requestOptions: SimpleStreamOptions | undefined;
+		useSummaryStreamFn(harness, "standalone summary", (context, options) => {
+			requestContext = context;
+			requestOptions = options;
+		});
+
+		await harness.session.compact();
+
+		expect(transformContext).not.toHaveBeenCalled();
+		expect(requestContext?.systemPrompt).not.toBe(harness.session.agent.state.systemPrompt);
+		expect(requestContext?.tools).toBeUndefined();
+		expect(JSON.stringify(requestContext?.messages)).toContain("<conversation>");
+		expect(requestOptions).toMatchObject({ cacheRetention: "none" });
+		expect(requestOptions?.sessionId).not.toBe("active-routing-session");
+		expect(requestOptions?.transport).toBeUndefined();
+	});
+
 	it("persists usage from pi-generated manual compaction", async () => {
 		const harness = await createHarness({ withConfiguredAuth: false });
 		harnesses.push(harness);
@@ -279,23 +315,91 @@ describe("AgentSession compaction characterization", () => {
 	});
 
 	it("classifies an AbortError from auto-compaction as aborted", async () => {
-		const harness = await createHarness();
+		const abortFailedEvents: Array<{
+			reason: "manual" | "threshold" | "overflow";
+			errorMessage?: string;
+			aborted: boolean;
+			willRetry: boolean;
+			fromExtension: boolean;
+		}> = [];
+		const abortHarness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("session_compact_failed", async (event) => {
+						abortFailedEvents.push(event);
+					});
+				},
+			],
+		});
+		harnesses.push(abortHarness);
+		seedCompactableSession(abortHarness);
+		abortHarness.session.agent.streamFunction = () => {
+			throw new DOMException("cancelled", "AbortError");
+		};
+		const abortInternals = abortHarness.session as unknown as SessionWithCompactionInternals;
+
+		await expect(abortInternals._runAutoCompaction("threshold", false)).resolves.toBe(false);
+
+		expect(abortHarness.eventsOfType("compaction_end").at(-1)).toMatchObject({
+			type: "compaction_end",
+			reason: "threshold",
+			aborted: true,
+			willRetry: false,
+		});
+		expect(abortHarness.eventsOfType("compaction_end").at(-1)).not.toHaveProperty("errorMessage");
+		expect(abortFailedEvents).toEqual([
+			expect.objectContaining({
+				type: "session_compact_failed",
+				reason: "threshold",
+				aborted: true,
+				willRetry: false,
+				fromExtension: false,
+			}),
+		]);
+	});
+
+	it("notifies extensions when auto-compaction fails", async () => {
+		const failedEvents: Array<{
+			reason: "manual" | "threshold" | "overflow";
+			errorMessage?: string;
+			aborted: boolean;
+			willRetry: boolean;
+			fromExtension: boolean;
+		}> = [];
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("session_compact_failed", async (event) => {
+						failedEvents.push(event);
+					});
+				},
+			],
+		});
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		harness.session.agent.streamFunction = () => {
-			throw new DOMException("cancelled", "AbortError");
+			throw new Error("summary generator blew up");
 		};
 		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
 
 		await expect(sessionInternals._runAutoCompaction("threshold", false)).resolves.toBe(false);
 
 		expect(harness.eventsOfType("compaction_end").at(-1)).toMatchObject({
-			type: "compaction_end",
 			reason: "threshold",
-			aborted: true,
+			aborted: false,
 			willRetry: false,
+			errorMessage: "Auto-compaction failed: summary generator blew up",
 		});
-		expect(harness.eventsOfType("compaction_end").at(-1)).not.toHaveProperty("errorMessage");
+		expect(failedEvents).toEqual([
+			expect.objectContaining({
+				type: "session_compact_failed",
+				reason: "threshold",
+				aborted: false,
+				willRetry: false,
+				fromExtension: false,
+				errorMessage: "Auto-compaction failed: summary generator blew up",
+			}),
+		]);
 	});
 
 	it("compacts and resumes after a length stop below the desired output limit", async () => {
@@ -373,6 +477,34 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.faux.state.callCount).toBe(2);
 		expect(harness.eventsOfType("compaction_start").filter((event) => event.reason === "overflow")).toHaveLength(1);
 		expect(harness.eventsOfType("compaction_end").at(-1)?.errorMessage).toBe(
+			"Truncated response recovery failed after one compact-and-retry attempt.",
+		);
+	});
+
+	it("keeps overflow wording when a repeated length stop fills the context window", async () => {
+		const harness = await createHarness({
+			models: [{ id: "faux-1", contextWindow: 100, maxTokens: 100 }],
+		});
+		harnesses.push(harness);
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const lengthOverflowMessage = createAssistant(harness, {
+			stopReason: "length",
+			totalTokens: 100,
+			timestamp: Date.now(),
+		});
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+		const compactionErrors: string[] = [];
+		harness.session.subscribe((event) => {
+			if (event.type === "compaction_end" && event.errorMessage) {
+				compactionErrors.push(event.errorMessage);
+			}
+		});
+
+		await sessionInternals._checkCompaction(lengthOverflowMessage);
+		await sessionInternals._checkCompaction({ ...lengthOverflowMessage, timestamp: Date.now() + 1 });
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
+		expect(compactionErrors).toContain(
 			"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
 		);
 	});
