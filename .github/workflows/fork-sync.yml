@@ -58,6 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      actions: write
       contents: write
 
     steps:
@@ -86,3 +87,8 @@ jobs:
           git push --atomic origin \
             refs/remotes/validated/main:main \
             refs/remotes/validated/local:local
+
+      - name: Trigger source release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run auto-release.yml --ref local

@@ -72,6 +72,30 @@ async function refreshProvider(
 afterEach(() => vi.restoreAllMocks());
 
 describe("remote catalog provider", () => {
+	it("preserves native dynamic provider refresh behavior", async () => {
+		const refreshModels = vi.fn(async () => {});
+		const provider = createProvider({
+			id: "dynamic-provider",
+			auth: { apiKey: { name: "Test", resolve: async () => ({ auth: {} }) } },
+			models: [],
+			fetchModels: async () => [],
+			api: {
+				stream: () => {
+					throw new Error("not used");
+				},
+				streamSimple: () => {
+					throw new Error("not used");
+				},
+			},
+		});
+		provider.refreshModels = refreshModels;
+
+		const wrapped = withRemoteCatalog(provider, "https://pi.dev", Date.now());
+
+		expect(wrapped).toBe(provider);
+		expect(wrapped.refreshModels).toBe(refreshModels);
+	});
+
 	it("parses keyed catalogs, sends version headers, observes the refresh TTL, and supports forced refreshes", async () => {
 		const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
 			async () =>

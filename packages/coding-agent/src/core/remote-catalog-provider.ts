@@ -48,6 +48,11 @@ export function withRemoteCatalog(
 	catalogBaseUrl: string = DEFAULT_CATALOG_BASE_URL,
 	localGeneratedAt?: number,
 ): Provider {
+	// Native dynamic providers own their refresh and persistence semantics. Wrapping one
+	// would replace refreshModels, preventing its provider API from ever being queried
+	// and allowing an empty pi.dev overlay to overwrite its cached catalog.
+	if (provider.refreshModels) return provider;
+
 	let dynamicModels: readonly Model<Api>[] = [];
 
 	return {
