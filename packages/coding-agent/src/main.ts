@@ -64,7 +64,13 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/tru
 import { builtInExtensions } from "./extensions/index.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
-import { getThemeMissingTokenWarning, initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
+import {
+	getThemeMissingTokenWarning,
+	initTheme,
+	setThemeJsonValidator,
+	stopThemeWatcher,
+} from "./modes/interactive/theme/theme.ts";
+import { validateThemeJson } from "./modes/interactive/theme/theme-json.ts";
 import { cleanupManagedInstall, handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
@@ -881,6 +887,8 @@ export async function main(args: string[], options?: MainOptions) {
 		stdinContent,
 	);
 	time("prepareInitialMessage");
+	// pi reads user-authored themes, so it opts into full validation before any theme loads.
+	setThemeJsonValidator(validateThemeJson);
 	const themeInit = initTheme(settingsManager.getTheme(), appMode === "interactive");
 	time("initTheme");
 

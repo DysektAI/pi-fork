@@ -129,7 +129,7 @@
       "drift": {
         "type": "grep-absent",
         "ref": "upstream/main",
-        "file": "packages/coding-agent/src/core/tools/bash.ts",
+        "file": "packages/coding-agent/src/core/tools/renderers/bash.ts",
         "pattern": "\\[Bash Tool\\]"
       }
     },
