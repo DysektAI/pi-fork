@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DysektAI/pi-fork/blob/local/.fork/fork-manifest.schema.json",
+  "title": "pi fork manifest",
+  "description": "Inventory of fork-only patches. fork-drift-check.py evaluates every feature's drift probe against the upstream ref so absorbed features can be dropped; richer fork-sync.sh tooling derives its branch lists (independent, stacked, mergeIntoLocal) from this file. The runtime validator in fork-drift-check.py remains authoritative; this schema documents and type-checks the same shape for editors and reviewers.",
+  "type": "object",
+  "required": ["features"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path to this schema, relative to the manifest."
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line summary of what the manifest inventories."
+    },
+    "identity": {
+      "type": "object",
+      "description": "Git identity to use for fork-authored commits.",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" }
+      }
+    },
+    "upstreamRef": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Default git ref probed by drift checks and merged by fork-sync.sh, e.g. \"upstream/main\"."
+    },
+    "integrationBranch": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Branch that carries main plus every merged feature, e.g. \"local\"."
+    },
+    "notes": {
+      "type": "array",
+      "description": "Free-form maintenance notes: scope decisions, retired branches, adoption prerequisites.",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "features": {
+      "type": "array",
+      "description": "One entry per fork feature branch.",
+      "items": { "$ref": "#/$defs/feature" }
+    }
+  },
+  "$defs": {
+    "feature": {
+      "type": "object",
+      "required": ["branch", "drift"],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Branch in this repository that carries the feature."
+        },
+        "summary": {
+          "type": "string",
+          "description": "What the feature changes, in one or two sentences."
+        },
+        "base": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Branch the feature is based on: \"main\" or another feature branch."
+        },
+        "stackedOn": {
+          "description": "Base feature(s) this branch is stacked on; stacked branches are rebuilt, not rebased plain.",
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+          ]
+        },
+        "mergeIntoLocal": {
+          "type": "boolean",
+          "description": "True when fork-sync.sh merges this branch into the integration branch. False for branches tracked but deliberately not merged."
+        },
+        "drift": { "$ref": "#/$defs/drift" }
+      }
+    },
+    "drift": {
+      "type": "object",
+      "required": ["type"],
+      "description": "Probe that decides whether upstream absorbed the feature. ACTIVE = upstream lacks it; REDUNDANT = upstream has it, consider dropping the fork patch.",
+      "properties": {
+        "type": {
+          "enum": ["grep-absent", "grep-present", "path-absent", "path-present", "version-gte"],
+          "description": "Probe kind. grep-* searches file for pattern; path-* tests a tree path; version-gte compares a JSON value in file against minVersion."
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Git ref to probe instead of the manifest upstreamRef."
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repository path probed by grep-*/version-gte. A missing file reports CHECK, not ACTIVE."
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Regular expression searched in file (grep-absent, grep-present)."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repository path tested for existence (path-absent, path-present)."
+        },
+        "jsonPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Dotted key path into file, used by version-gte."
+        },
+        "minVersion": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Semver the file's jsonPath value must reach for the feature to be REDUNDANT."
+        },
+        "note": {
+          "type": "string",
+          "description": "Why this probe, and when to flip the feature to REDUNDANT."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "enum": ["grep-absent", "grep-present"] } }, "required": ["type"] },
+          "then": { "required": ["file", "pattern"] }
+        },
+        {
+          "if": { "properties": { "type": { "enum": ["path-absent", "path-present"] } }, "required": ["type"] },
+          "then": { "required": ["path"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "version-gte" } }, "required": ["type"] },
+          "then": { "required": ["file", "jsonPath", "minVersion"] }
+        }
+      ]
+    }
+  }
+}
