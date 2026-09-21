@@ -8,10 +8,10 @@
   "upstreamRef": "upstream/main",
   "integrationBranch": "local",
   "notes": [
-    "Scope: retained fork-only patches on local, plus branches deliberately NOT merged. Standalone extensions listed below keep development branches in this repo but ship from DysektAI/pi-extensions; their branches stay unmerged, so a manifest entry for them would falsely imply local carries their code.",
-    "Branches NOT merged into local: feat/notes-box-extension, feat/task-tracker-extension, feat/discord-extension, feat/web-search-extension, feat/session-recap-extension, feat/auto-title-extension, feat/auto-update-extension, feat/continue-button-extension, feat/config-center-extension, feat/credential-pool-extension (all delivered as extensions from DysektAI/pi-extensions), feat/read-outline-view (same, via read-full-header + _shared/read-outline), and feat/footer-thinking-level-color (experimental, stacked on absorbed feat/max-thinking-level).",
+    "Scope: retained fork-only patches on local, plus branches deliberately NOT merged. Standalone extensions keep development branches in this repo but ship from DysektAI/pi-extensions (see the notes below); listing them as features would falsely imply local carries their code.",
+    "Branches NOT merged into local and deliberately not listed here, because the canonical rebuild rebases every independent entry and rebuilds every stacked one: feat/notes-box-extension, feat/task-tracker-extension, feat/discord-extension, feat/web-search-extension, feat/session-recap-extension, feat/auto-title-extension, feat/auto-update-extension, feat/continue-button-extension, feat/config-center-extension, feat/credential-pool-extension (all delivered as extensions from DysektAI/pi-extensions), feat/read-outline-view (same, via read-full-header + _shared/read-outline), and feat/footer-thinking-level-color (experimental, stacked on absorbed feat/max-thinking-level).",
     "Absorbed upstream, no entry needed: feat/max-thinking-level and refactor/deduplicate-shared-utils (its branch no longer exists).",
-    "The canonical feat/fork-tooling copy of this manifest still marks the extension and outline branches mergeIntoLocal: true. Reconcile those flags before adopting that branch's fork-sync.sh: its rebuild merges every mergeIntoLocal branch into local and its stale-branch gate requires each one to be rebased onto the new main."
+    "The canonical feat/fork-tooling copy of this manifest still marks the extension and outline branches mergeIntoLocal: true. Reconcile those flags before adopting that branch's fork-sync.sh: its rebuild rebases every listed independent branch onto the new main, rebuilds every stacked one, merges each mergeIntoLocal branch into local, and refuses to continue while any listed branch is stale."
   ],
   "features": [
     {
@@ -202,32 +202,6 @@
         "file": "packages/coding-agent/src/core/extensions/types.ts",
         "pattern": "GetExtensionsHandler",
         "note": "Merged into local (agent-session getLoadedExtensions + extensions/types GetExtensionsHandler). REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
-      }
-    },
-    {
-      "branch": "feat/read-outline-view",
-      "summary": "Dependency-free 'view: outline' option on the read tool: line-numbered structural summary of source files (bodies elided) for cheap navigation of large files.",
-      "base": "main",
-      "mergeIntoLocal": false,
-      "drift": {
-        "type": "path-absent",
-        "ref": "upstream/main",
-        "path": "packages/coding-agent/src/core/tools/read-outline.ts",
-        "note": "Delivered as the read-full-header + _shared/read-outline extensions from DysektAI/pi-extensions, not merged into local. REDUNDANT if upstream ships its own structural/outline read mode."
-      }
-    },
-    {
-      "branch": "feat/footer-thinking-level-color",
-      "summary": "Color the footer thinking-level indicator per level.",
-      "base": "feat/max-thinking-level",
-      "stackedOn": "feat/max-thinking-level",
-      "mergeIntoLocal": false,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/modes/interactive/components/footer.ts",
-        "pattern": "thinkingLevelColor",
-        "note": "Experimental; not merged into local and not delivered as an extension. Its base feat/max-thinking-level is absorbed upstream, so re-verify the stack before rebuilding it."
       }
     },
     {
