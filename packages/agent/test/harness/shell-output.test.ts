@@ -6,15 +6,17 @@ describe("sanitizeBinaryOutput", () => {
 		expect(sanitizeBinaryOutput("hello world")).toBe("hello world");
 	});
 
-	it("preserves tabs, newlines, and carriage returns", () => {
-		expect(sanitizeBinaryOutput("line1\nline2\ttab\rreturn")).toBe("line1\nline2\ttab\rreturn");
+	it("preserves tabs and newlines while stripping carriage returns", () => {
+		// Upstream's sanitizeShellOutput (aliased as sanitizeBinaryOutput) normalizes CR away so
+		// captured shell output keeps stable line boundaries; see output-capture.test.ts.
+		expect(sanitizeBinaryOutput("line1\nline2\ttab\rreturn")).toBe("line1\nline2\ttabreturn");
 	});
 
 	it("removes null bytes", () => {
 		expect(sanitizeBinaryOutput("a\x00b")).toBe("ab");
 	});
 
-	it("removes control characters (except tab/newline/cr)", () => {
+	it("removes control characters (except tab/newline)", () => {
 		expect(sanitizeBinaryOutput("a\x01\x02\x03b")).toBe("ab");
 		expect(sanitizeBinaryOutput("a\x1fb")).toBe("ab");
 	});

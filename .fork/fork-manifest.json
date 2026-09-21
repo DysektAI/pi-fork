@@ -173,6 +173,19 @@
       }
     },
     {
+      "branch": "feat/synthetic-provider",
+      "summary": "Synthetic provider: hydrate the Synthetic OpenAI-compatible catalog in generate-models (fetchSyntheticModels + SYNTHETIC_COMPAT) and ship the hand-written provider shard with stable aliases.",
+      "base": "main",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/scripts/generate-models.ts",
+        "pattern": "fetchSyntheticModels",
+        "note": "Fork-only provider. The delta also allows the extra https://api.synthetic.new/openai/v1/models catalog URL in the upstream-owned test/fireworks-model-generation.test.ts fetch mock (upstream's mock throws on unknown URLs). REDUNDANT if upstream ships a Synthetic catalog fetch of its own."
+      }
+    },
+    {
       "branch": "feat/strip-ghost-tokens",
       "summary": "Strip zero-width ghost tokens (ZWSP/ZWJ/ZWNJ) from outgoing text to prevent invisible-character corruption across providers.",
       "base": "main",
