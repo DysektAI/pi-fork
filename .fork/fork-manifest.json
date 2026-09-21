@@ -207,7 +207,7 @@
     },
     {
       "branch": "feat/strip-ghost-tokens",
-      "summary": "Strip zero-width ghost tokens (ZWSP/ZWJ/ZWNJ) from outgoing text to prevent invisible-character corruption across providers.",
+      "summary": "Exported utility that removes genuinely-invisible characters (SOFT HYPHEN, MONGOLIAN VOWEL SEPARATOR, ZWSP, WORD JOINER, U+2061-U+2064, BOM/ZWSP-BOM, TAG block) with a PI_KEEP_GHOST_TOKENS=1 opt-out; deliberately preserves ZWJ/ZWNJ, LRM/RLM and variation selectors. Opt-in only: no call sites in-tree, so nothing strips automatically yet.",
       "base": "main",
       "mergeIntoLocal": true,
       "drift": {
@@ -215,7 +215,7 @@
         "ref": "upstream/main",
         "file": "packages/ai/src/utils/sanitize-unicode.ts",
         "pattern": "stripGhostTokens",
-        "note": "REDUNDANT if upstream adds its own zero-width ghost-token stripping in sanitize-unicode."
+        "note": "REDUNDANT if upstream adds its own zero-width ghost-token stripping in sanitize-unicode. Wiring status (verified 2026-09-21): the patch ships the utility, its docs and tests only - no caller anywhere in the repo or in the installed extensions, and openai-completions still sanitises outgoing text with sanitizeSurrogates alone. Wire stripGhostTokens into the request path (e.g. alongside sanitizeSurrogates or at normalizeContext) if automatic stripping is wanted; otherwise keep this entry describing an unused utility."
       }
     }
   ]
