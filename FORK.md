@@ -120,8 +120,35 @@ conflict; extension-only customizations update independently.
 
 ## Recovery
 
-Before every upstream merge, the script creates a backup tag. To abandon a bad
-manual resolution:
+Before every upstream merge, the script creates a backup tag named
+`backup/sync-<timestamp>/local`, so the pre-sync `local` tip stays reachable.
+Retain the two most recent sets: the richer `fork-sync.sh` on
+`feat/fork-tooling` prunes older sets itself (`--keep-backups N`), while the
+script on `local` only creates them. Prune the rest by hand, and treat tags
+whose commits are no longer ancestors of any branch as deliberate keepers —
+they are the last reference to a superseded branch lineage:
+
+```bash
+# the two newest sets are the ones to keep
+keep=$(git tag -l 'backup/sync-*' | sed 's#/[^/]*$##' | sort -u | tail -n 2)
+printf '%s\n' "$keep"
+
+# a tag is a deliberate keeper when no branch contains its commit: it is the
+# last reference to a superseded branch lineage
+last_reference() {
+	[ "$(git for-each-ref --contains "$1" --format='%(refname:short)' | grep -vc '^backup/')" -eq 0 ]
+}
+
+# prune every set older than the two newest, skipping last references
+for set in $(git tag -l 'backup/sync-*' | sed 's#/[^/]*$##' | sort -u | sed '$d' | sed '$d'); do
+	for tag in $(git tag -l "$set/*"); do
+		last_reference "$tag" && { echo "keeping last reference: $tag"; continue; }
+		git tag -d "$tag"
+	done
+done
+```
+
+To abandon a bad manual resolution:
 
 ```bash
 git merge --abort
