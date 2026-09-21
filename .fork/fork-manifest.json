@@ -113,7 +113,7 @@
         "ref": "upstream/main",
         "file": "packages/coding-agent/test/changelog.test.ts",
         "pattern": "parseChangelog",
-        "note": "The branch adds parseChangelog/compareVersions/getNewEntries suites to changelog.test.ts plus 9 fork-only test files (ai/{abort-signals,hash,json-parse,sanitize-unicode}, agent/harness/{messages,shell-output}, coding-agent/mime, tui/{kill-ring,undo-stack}). Upstream now ships changelog.test.ts but only covers normalizeChangelogLinks, so the old path-present probe false-fired. This grep flips REDUNDANT only when upstream absorbs the fork's parseChangelog coverage; re-verify the other files before dropping."
+        "note": "The branch adds parseChangelog/compareVersions/getNewEntries suites to changelog.test.ts plus 10 fork-only test files (ai/{abort-signals,hash,json-parse,sanitize-unicode}, agent/harness/{messages,shell-output}, coding-agent/{mime,tps-extension}, tui/{kill-ring,undo-stack}). Upstream now ships changelog.test.ts but only covers normalizeChangelogLinks, so the old path-present probe false-fired. This grep flips REDUNDANT only when upstream absorbs the fork's parseChangelog coverage; re-verify the other files before dropping."
       }
     },
     {
@@ -202,7 +202,7 @@
         "ref": "upstream/main",
         "file": "packages/coding-agent/src/core/extensions/types.ts",
         "pattern": "GetExtensionsHandler",
-        "note": "Merged into local (agent-session getLoadedExtensions + extensions/types GetExtensionsHandler). REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
+        "note": "Merged into local (agent-session getLoadedExtensions + extensions/types GetExtensionsHandler; fork test: coding-agent/test/extensions-api.test.ts). REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
       }
     },
     {
