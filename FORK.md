@@ -89,6 +89,34 @@ files, resolve them on `local`, complete the merge, run the checks, and push.
 This is the maintainer path that integrates new upstream source and publishes a
 validated `origin/local` for source installations to consume.
 
+### Consumer job (on-disk checkout + `dist/`)
+
+The GitHub workflow publishes refs but never touches this machine, so a separate
+consumer job keeps the on-disk checkout and its locally built `dist/` current.
+It is version-controlled here:
+
+| File | Role |
+| --- | --- |
+| `.fork/local-sync.sh` | fetch, ff-only to `origin/local`, `npm install --ignore-scripts`, `npm run build` |
+| `.fork/systemd/pi-fork-local-sync.service` | oneshot unit running that script |
+| `.fork/systemd/pi-fork-local-sync.timer` | daily 04:00 + jitter, `Persistent=true` |
+
+It refuses to run with a dirty or diverged worktree (`ABORT: ...` in the log at
+`$XDG_STATE_HOME/pi-fork/local-sync.log`), never merges upstream, never pushes,
+and never rewrites history. Install it by symlinking the tracked units so the
+repo stays the single source of truth:
+
+```bash
+ln -sf "$PWD/.fork/systemd/pi-fork-local-sync.service" ~/.config/systemd/user/
+ln -sf "$PWD/.fork/systemd/pi-fork-local-sync.timer"   ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now pi-fork-local-sync.timer
+```
+
+Adapt `PI_FORK_ROOT` and `PATH` in the service unit when the checkout or the
+Node installation lives elsewhere. `.fork/fork-auto-sync.sh` is the older,
+all-in-one local wrapper (it also merges upstream and pushes): do not enable it
+and this timer at the same time.
+
 Do not substitute `pi update --self` for fork synchronization. Self-update only
 fast-forwards a consumer checkout to the already-published `origin/local`; it
 never fetches or merges `upstream/main`. Conversely, fork launchers that want

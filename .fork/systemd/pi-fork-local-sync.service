@@ -1,0 +1,29 @@
+[Unit]
+# Canonical copy (tracked in the fork at .fork/systemd/). Install on a machine with:
+#   ln -sf "$PWD/.fork/systemd/pi-fork-local-sync.service" ~/.config/systemd/user/
+#   ln -sf "$PWD/.fork/systemd/pi-fork-local-sync.timer"   ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now pi-fork-local-sync.timer
+# This is the consumer job only: fast-forward + rebuild, never merge, never push.
+# See FORK.md ("Automation") for the contract with the GitHub Actions sync.
+Description=Fast-forward local pi-fork worktree to origin/local and rebuild dist
+Documentation=file:///home/lab/pi-fork/FORK.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# User services start with a minimal PATH; node/npm live in the fnm dir.
+# Use the stable default-alias symlink (not a pinned version) so an fnm Node
+# upgrade doesn't break this unit. Adapt PATH and PI_FORK_ROOT when the
+# checkout or the Node installation lives elsewhere.
+Environment=PATH=/home/lab/.local/share/fnm/aliases/default/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PI_FORK_ROOT=/home/lab/pi-fork
+# Be a good background citizen: low priority, don't starve interactive sessions.
+Nice=10
+# Cap a hung sync (network + install + build) so it can't run forever.
+TimeoutStartSec=1800
+WorkingDirectory=/home/lab/pi-fork
+ExecStart=/usr/bin/bash /home/lab/pi-fork/.fork/local-sync.sh
+
+[Install]
+WantedBy=default.target

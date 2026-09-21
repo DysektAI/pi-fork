@@ -17,7 +17,7 @@
   "features": [
     {
       "branch": "feat/fork-tooling",
-      "summary": "Fork maintenance tooling: CHANGELOG merge driver, rerere setup, sync scripts, docs.",
+      "summary": "Fork maintenance tooling: CHANGELOG merge driver, rerere setup, sync scripts, the tracked consumer job (.fork/local-sync.sh + .fork/systemd units), docs.",
       "base": "main",
       "mergeIntoLocal": true,
       "drift": {
