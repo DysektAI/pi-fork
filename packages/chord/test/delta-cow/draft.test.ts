@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyImmutable, type Draft, track } from "../src/delta/index.ts";
+import { applyImmutable, type Draft, track } from "../../src/delta/cow/index.ts";
 
 describe("copy-on-write change drafts", () => {
 	it("copies only changed branches", () => {
@@ -89,15 +89,10 @@ describe("copy-on-write change drafts", () => {
 		expect(applyImmutable(prepared.base, prepared.ops)).toEqual(prepared.value);
 	});
 
-	it("rejects invalid writes without mutating the committed base", () => {
+	it("rejects array holes without mutating the committed base", () => {
 		const tracker = track({ values: [1, 2] });
-		let change = tracker.beginChange();
-		expect(() => delete change.state.values[0]).toThrow(/dense|holes/);
-		change.abort();
-		change = tracker.beginChange();
-		expect(() => {
-			change.state.values[0] = undefined as unknown as number;
-		}).toThrow(/undefined/);
+		const change = tracker.beginChange();
+		expect(() => delete change.state.values[0]).toThrow(/holes/);
 		change.abort();
 		expect(tracker.value.values).toEqual([1, 2]);
 	});

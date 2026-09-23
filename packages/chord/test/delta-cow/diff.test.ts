@@ -7,8 +7,8 @@ import {
 	diffRevisions,
 	encoder,
 	type Op,
-} from "../src/delta/index.ts";
-import type { JsonValue } from "../src/types.ts";
+} from "../../src/delta/cow/index.ts";
+import type { JsonValue } from "../../src/types.ts";
 
 const expectDiff = (before: JsonValue, after: JsonValue, expected: unknown): void => {
 	const operations = diffRevisions(before, after);
@@ -228,6 +228,16 @@ describe("immutable revision diff", () => {
 		expectDiff({ values: before }, { values: after }, [["p", ["values"], 1, 2, replacements]]);
 	});
 
+	it("keeps a large rotation payload-free", () => {
+		const values = Array.from({ length: 10_000 }, (_, value) => ({ value }));
+		const rotated = [...values.slice(1_000), ...values.slice(0, 1_000)];
+		const operations = diffRevisions({ values }, { values: rotated });
+		expect(operations).toHaveLength(1);
+		expect(operations[0]?.[0]).toBe("m");
+		expect(JSON.stringify(operations).length).toBeLessThan(60_000);
+		expect(applyImmutable({ values }, operations)).toEqual({ values: rotated });
+	});
+
 	it("encodes five hundred unshifts without snapshotting retained rows", () => {
 		const retained = Array.from({ length: 10_000 }, (_, value) => ({ value, payload: "x".repeat(100) }));
 		const inserted = Array.from({ length: 500 }, (_, value) => ({ value: -value - 1 }));
@@ -247,10 +257,11 @@ describe("immutable revision diff", () => {
 		expect(diffRevisions(before, after)).toEqual([["r", after]]);
 	});
 
-	it("falls back to a base operation when leaf operations are larger", () => {
+	it("uses normalized array fallback without payload-cost policy", () => {
 		const before = { values: Array.from({ length: 40_000 }, () => 0) };
 		const after = { values: Array.from({ length: 40_000 }, () => 1) };
 		const operations = diffRevisions(before, after);
-		expect(operations).toEqual([["r", after]]);
+		expect(operations).toEqual([["p", ["values"], 0, 40_000, after.values]]);
+		expect(applyImmutable(before, operations)).toEqual(after);
 	});
 });
