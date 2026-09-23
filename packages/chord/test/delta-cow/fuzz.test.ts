@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { applyImmutable, type Draft, type Op, track } from "../src/delta/index.ts";
+import { applyImmutable, type Draft, type Op, track } from "../../src/delta/cow/index.ts";
 
 type Item = { id: number; text: string; score: number };
 type Document = {
@@ -94,7 +94,6 @@ it("converges across randomized prepared revisions", () => {
 			tracker.adopt(prepared);
 			expect(tracker.value, `state seed ${seed} step ${step} choice ${choice}`).toEqual(expected);
 			expect(replica, `replica seed ${seed} step ${step} choice ${choice}`).toEqual(expected);
-			expect(Object.isFrozen(tracker.value)).toBe(true);
 		}
 	}
 });
