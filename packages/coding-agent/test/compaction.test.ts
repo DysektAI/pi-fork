@@ -283,6 +283,21 @@ describe("shouldCompact", () => {
 		expect(shouldCompact(89000, 100000, settings)).toBe(false);
 	});
 
+	it("should cap the trigger point below the context window", () => {
+		const settings: CompactionSettings = {
+			enabled: true,
+			reserveTokens: 10000,
+			keepRecentTokens: 20000,
+			maxContextTokens: 400000,
+		};
+
+		expect(shouldCompact(400001, 1000000, settings)).toBe(true);
+		expect(shouldCompact(400000, 1000000, settings)).toBe(false);
+		// Windows smaller than the cap still trigger at contextWindow - reserveTokens.
+		expect(shouldCompact(90001, 100000, settings)).toBe(true);
+		expect(shouldCompact(89999, 100000, settings)).toBe(false);
+	});
+
 	it("should return false when disabled", () => {
 		const settings: CompactionSettings = {
 			enabled: false,

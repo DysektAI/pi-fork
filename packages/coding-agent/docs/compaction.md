@@ -29,10 +29,12 @@ Both use closely related structured formats and track file operations cumulative
 Auto-compaction triggers when:
 
 ```
-contextTokens > contextWindow - reserveTokens
+contextTokens > min(contextWindow - reserveTokens, maxContextTokens)
 ```
 
 By default, `reserveTokens` is 16384 tokens (configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`). This leaves room for the LLM's response.
+
+`maxContextTokens` (default `Number.MAX_SAFE_INTEGER`, meaning no cap) caps the trigger point independently of the model's window. Setting `compaction.maxContextTokens` to `400000`, for example, compacts once the projected context passes 400k tokens even on 1M-token windows, while smaller windows still compact at `contextWindow - reserveTokens`. Per-model overrides live under `compaction.modelOverrides` like the other compaction token settings.
 
 During a multi-turn agent run, Pi checks the canonical projected context after tools finish and their results are appended, before starting the next assistant response. If the threshold is crossed, Pi compacts during `prepareNextTurn`, then performs the existing catch-up steering poll before `turn_start`. It skips this between-turn check when the completed tool batch terminates the run and no queued message requires another response. Pi also checks before a new user prompt and performs final-attempt overflow recovery after the low-level run ends.
 
