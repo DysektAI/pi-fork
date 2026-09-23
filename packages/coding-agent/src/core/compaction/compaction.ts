@@ -143,12 +143,15 @@ export interface CompactionSettings {
 	enabled: boolean;
 	reserveTokens: number;
 	keepRecentTokens: number;
+	/** Cap on the compaction trigger point, clamped to `contextWindow - reserveTokens`. */
+	maxContextTokens?: number;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
 	reserveTokens: 16384,
 	keepRecentTokens: 20000,
+	maxContextTokens: Number.MAX_SAFE_INTEGER,
 };
 
 // ============================================================================
@@ -285,10 +288,15 @@ export function estimateProjectedContextTokens(
 
 /**
  * Check if compaction should trigger based on context usage.
+ *
+ * The trigger point is `contextWindow - reserveTokens`, capped at
+ * `maxContextTokens` so oversized windows do not defer compaction past the
+ * configured token budget.
  */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	const cap = settings.maxContextTokens ?? Number.MAX_SAFE_INTEGER;
+	return contextTokens > Math.min(contextWindow - settings.reserveTokens, cap);
 }
 
 // ============================================================================

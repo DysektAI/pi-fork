@@ -151,6 +151,8 @@ export interface CompactionSettings {
 	reserveTokens: number;
 	/** Approximate recent-context tokens to keep after compaction. */
 	keepRecentTokens: number;
+	/** Cap on the compaction trigger point, clamped to `contextWindow - reserveTokens`. */
+	maxContextTokens?: number;
 }
 
 /** Default compaction settings used by the harness. */
@@ -158,6 +160,7 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
 	reserveTokens: 16384,
 	keepRecentTokens: 20000,
+	maxContextTokens: Number.MAX_SAFE_INTEGER,
 };
 
 /** Calculate total context tokens from provider usage. */
@@ -245,7 +248,8 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
 /** Return whether context usage exceeds the configured compaction threshold. */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	const cap = settings.maxContextTokens ?? Number.MAX_SAFE_INTEGER;
+	return contextTokens > Math.min(contextWindow - settings.reserveTokens, cap);
 }
 
 const ESTIMATED_IMAGE_CHARS = 4800;

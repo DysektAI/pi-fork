@@ -217,6 +217,19 @@
         "pattern": "stripGhostTokens",
         "note": "REDUNDANT if upstream adds its own zero-width ghost-token stripping in sanitize-unicode. Wiring status (verified 2026-09-21): the patch ships the utility, its docs and tests only - no caller anywhere in the repo or in the installed extensions, and openai-completions still sanitises outgoing text with sanitizeSurrogates alone. Wire stripGhostTokens into the request path (e.g. alongside sanitizeSurrogates or at normalizeContext) if automatic stripping is wanted; otherwise keep this entry describing an unused utility."
       }
+    },
+    {
+      "branch": "feat/compaction-max-context-tokens",
+      "summary": "compaction.maxContextTokens caps the auto-compaction trigger at min(contextWindow - reserveTokens, maxContextTokens) in coding-agent and the packages/agent harness, with per-model overrides.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/compaction/compaction.ts",
+        "pattern": "maxContextTokens",
+        "note": "REDUNDANT if upstream adds its own configurable cap on the compaction trigger point."
+      }
     }
   ]
 }
