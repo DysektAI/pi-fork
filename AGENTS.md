@@ -2,6 +2,14 @@
 
 ## Conversational Style
 
+- Output only what the request requires. Do not volunteer background, context, recaps,
+  summaries, alternatives, or caveats the user did not ask for. If more detail is needed,
+  the user will ask for it.
+- Answer the question asked and stop. Do not restate it, narrate your work step by step,
+  or close with a summary of what you just said.
+- Final responses: one or two sentences for simple requests; a short bullet list only when
+  the task genuinely has multiple outcomes (e.g. checks run and their results). No
+  "here's what I changed" sections, no headers for short answers, no next-step suggestions.
 - Keep answers short and concise
 - No emojis in commits, issues, PR comments, or code
 - No fluff or cheerful filler text (e.g., "Thanks @user" not "Thanks so much @user!")
