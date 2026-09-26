@@ -122,6 +122,21 @@ fast-forwards a consumer checkout to the already-published `origin/local`; it
 never fetches or merges `upstream/main`. Conversely, fork launchers that want
 release notifications must not set `PI_SKIP_VERSION_CHECK=1`.
 
+### Launcher
+
+`.fork/bin/pi` is the canonical `pi` launcher for a source checkout. Install it with
+`install -m 0755 .fork/bin/pi ~/.local/bin/pi`. It runs
+`$PI_FORK_CURRENT/packages/coding-agent/dist/cli.js` (default
+`~/.local/share/pi-fork/current`, a symlink to the active checkout) with the fnm
+default Node, falling back to `node` on `PATH`.
+
+## Extension-first policy
+
+Behavior that the public extension API can express ships from
+`DysektAI/pi-extensions`, not from `local`. Core patches stay only when no
+extension API can reproduce them; `.fork/fork-manifest.json` lists each one and
+its drift probe, and its notes record what moved out.
+
 ## Absorbed upstream features
 
 Run:

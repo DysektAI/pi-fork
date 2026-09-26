@@ -64,13 +64,8 @@ This table covers providers with a single primary API-key variable. Providers th
 | Xiaomi MiMo Token Plan (China) | `XIAOMI_TOKEN_PLAN_CN_API_KEY` |
 | Xiaomi MiMo Token Plan (Amsterdam) | `XIAOMI_TOKEN_PLAN_AMS_API_KEY` |
 | Xiaomi MiMo Token Plan (Singapore) | `XIAOMI_TOKEN_PLAN_SGP_API_KEY` |
-| Synthetic | `SYNTHETIC_API_KEY` |
 
 Anthropic also recognizes `ANTHROPIC_OAUTH_TOKEN` as an API credential and `ANTHROPIC_AUTH_TOKEN` as bearer authentication.
-
-### Synthetic
-
-Synthetic is an OpenAI-compatible provider with stable `syn:` aliases. Set `SYNTHETIC_API_KEY` or use `/login synthetic`, then choose `synthetic/syn:large:text` for coding/text or `synthetic/syn:large:vision` for vision. Run `pi update --models` to refresh its model catalog.
 
 ## Load an API key from a command
 

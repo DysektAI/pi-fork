@@ -12,7 +12,8 @@
     "Branches NOT merged into local and deliberately not listed here, because the canonical rebuild rebases every independent entry and rebuilds every stacked one: feat/notes-box-extension, feat/task-tracker-extension, feat/discord-extension, feat/web-search-extension, feat/session-recap-extension, feat/auto-title-extension, feat/auto-update-extension, feat/continue-button-extension, feat/config-center-extension, feat/credential-pool-extension (all delivered as extensions from DysektAI/pi-extensions), feat/read-outline-view (same, via read-full-header + _shared/read-outline), and feat/footer-thinking-level-color (experimental, stacked on absorbed feat/max-thinking-level).",
     "Absorbed upstream, no entry needed: feat/max-thinking-level and refactor/deduplicate-shared-utils (its branch no longer exists).",
     "The canonical feat/fork-tooling copy of this manifest still marks the extension and outline branches mergeIntoLocal: true. Reconcile those flags before adopting that branch's fork-sync.sh: its rebuild rebases every listed independent branch onto the new main, rebuilds every stacked one, merges each mergeIntoLocal branch into local, and refuses to continue while any listed branch is stale.",
-    "Adoption is a history-policy decision, not a routine tooling update: the canonical fork-sync.sh rebuilds local from main plus feature merges (git switch -C local main) and force-pushes it with --force-with-lease, whereas this branch's fork-sync.sh keeps normal merge history and pushes without force (FORK.md, 'Syncing with upstream'). A rebuild rewrites local's published lineage and would orphan the ancestry of the existing 0.86.1+local.N release tags."
+    "Adoption is a history-policy decision, not a routine tooling update: the canonical fork-sync.sh rebuilds local from main plus feature merges (git switch -C local main) and force-pushes it with --force-with-lease, whereas this branch's fork-sync.sh keeps normal merge history and pushes without force (FORK.md, 'Syncing with upstream'). A rebuild rewrites local's published lineage and would orphan the ancestry of the existing 0.86.1+local.N release tags.",
+    "Moved to DysektAI/pi-extensions (v0.5.0) and removed from local: [Thinking] label (thinking-label), [X Tool] call headers + path colour + VS Code paths (tool-headers), inline-code path links (path-links), Synthetic provider (synthetic), compaction.maxContextTokens (context-management). Dropped without replacement: toolPath theme token and missing-token warning, pi.getExtensions() (startup-welcome uses tool/command sourceInfo), stripGhostTokens (never called)."
   ],
   "features": [
     {
@@ -25,18 +26,6 @@
         "ref": "upstream/main",
         "path": ".fork/changelog-merge.py",
         "note": "Tooling is inherently fork-only; upstream will never carry it. Probe stays ACTIVE."
-      }
-    },
-    {
-      "branch": "feat/theme-toolpath-color",
-      "summary": "Optional toolPath theme token for file paths in tool titles.",
-      "base": "main",
-      "mergeIntoLocal": false,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/modes/interactive/theme/theme.ts",
-        "pattern": "toolPath"
       }
     },
     {
@@ -64,34 +53,6 @@
       }
     },
     {
-      "branch": "feat/markdown-path-linkify",
-      "summary": "Linkify existing file paths in markdown inline code (toolPath color + OSC 8 file:// hyperlink); also carries the vscode://file v2 path-link variant. Bash tool-title labeling moved to feat/tool-call-headers.",
-      "base": "feat/theme-toolpath-color",
-      "stackedOn": "feat/theme-toolpath-color",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/modes/interactive/theme/theme.ts",
-        "pattern": "resolveInlineCodePath"
-      }
-    },
-    {
-      "branch": "feat/theme-missing-token-warning",
-      "summary": "Warn when a custom theme omits optional color tokens.",
-      "base": "feat/theme-toolpath-color",
-      "stackedOn": [
-        "feat/theme-toolpath-color"
-      ],
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/main.ts",
-        "pattern": "missingTokens|warnMissing"
-      }
-    },
-    {
       "branch": "fix/improve-error-handling",
       "summary": "Surface errors via stderr (avoid TUI corruption), add stack traces, preserve OAuth error cause.",
       "base": "main",
@@ -114,43 +75,6 @@
         "file": "packages/coding-agent/test/changelog.test.ts",
         "pattern": "parseChangelog",
         "note": "The branch adds parseChangelog/compareVersions/getNewEntries suites to changelog.test.ts plus 10 fork-only test files (ai/{abort-signals,hash,json-parse,sanitize-unicode}, agent/harness/{messages,shell-output}, coding-agent/{mime,tps-extension}, tui/{kill-ring,undo-stack}). Upstream now ships changelog.test.ts but only covers normalizeChangelogLinks, so the old path-present probe false-fired. This grep flips REDUNDANT only when upstream absorbs the fork's parseChangelog coverage; re-verify the other files before dropping."
-      }
-    },
-    {
-      "branch": "feat/reasoning-trace-label",
-      "summary": "Prefix rendered reasoning/thinking blocks with a bold [Thinking] header so the trace is unambiguous at a glance (pi normalizes every provider's reasoning channel into one 'thinking' type).",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/modes/interactive/components/assistant-message.ts",
-        "pattern": "\\[Thinking\\]"
-      }
-    },
-    {
-      "branch": "feat/tool-call-headers",
-      "summary": "Render every tool call as a bold bracketed [X Tool] header on its own line with args beneath (bash/read/edit/write/ls/grep/find + generic fallback), and collapse multi-line bash commands into a single title line.",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/core/tools/renderers/bash.ts",
-        "pattern": "\\[Bash Tool\\]"
-      }
-    },
-    {
-      "branch": "fix/vscode-terminal-paths",
-      "summary": "Open file paths in-window in the VS Code integrated terminal: emit styled plain text (no OSC 8) so VS Code's link detector resolves the file in the active Remote-WSL/SSH workspace instead of failing or opening a new window. isVscodeTerminal() helper kept local to coding-agent.",
-      "base": "feat/markdown-path-linkify",
-      "stackedOn": "feat/markdown-path-linkify",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/core/tools/render-utils.ts",
-        "pattern": "isVscodeTerminal"
       }
     },
     {
@@ -180,55 +104,16 @@
       }
     },
     {
-      "branch": "feat/synthetic-provider",
-      "summary": "Synthetic provider: hydrate the Synthetic OpenAI-compatible catalog in generate-models (fetchSyntheticModels + SYNTHETIC_COMPAT) and ship the hand-written provider shard with stable aliases.",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/ai/scripts/generate-models.ts",
-        "pattern": "fetchSyntheticModels",
-        "note": "Fork-only provider. The delta also allows the extra https://api.synthetic.new/openai/v1/models catalog URL in the upstream-owned test/fireworks-model-generation.test.ts fetch mock (upstream's mock throws on unknown URLs). REDUNDANT if upstream ships a Synthetic catalog fetch of its own."
-      }
-    },
-    {
-      "branch": "feat/extensions-getextensions-api",
-      "summary": "Adds pi.getExtensions() to the extension API, returning loaded extensions with canonical name/path/scope/source metadata.",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/coding-agent/src/core/extensions/types.ts",
-        "pattern": "GetExtensionsHandler",
-        "note": "Merged into local (agent-session getLoadedExtensions + extensions/types GetExtensionsHandler; fork test: coding-agent/test/extensions-api.test.ts). REDUNDANT if upstream ships an equivalent getExtensions() on the extension API."
-      }
-    },
-    {
-      "branch": "feat/strip-ghost-tokens",
-      "summary": "Exported utility that removes genuinely-invisible characters (SOFT HYPHEN, MONGOLIAN VOWEL SEPARATOR, ZWSP, WORD JOINER, U+2061-U+2064, BOM/ZWSP-BOM, TAG block) with a PI_KEEP_GHOST_TOKENS=1 opt-out; deliberately preserves ZWJ/ZWNJ, LRM/RLM and variation selectors. Opt-in only: no call sites in-tree, so nothing strips automatically yet.",
-      "base": "main",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/ai/src/utils/sanitize-unicode.ts",
-        "pattern": "stripGhostTokens",
-        "note": "REDUNDANT if upstream adds its own zero-width ghost-token stripping in sanitize-unicode. Wiring status (verified 2026-09-21): the patch ships the utility, its docs and tests only - no caller anywhere in the repo or in the installed extensions, and openai-completions still sanitises outgoing text with sanitizeSurrogates alone. Wire stripGhostTokens into the request path (e.g. alongside sanitizeSurrogates or at normalizeContext) if automatic stripping is wanted; otherwise keep this entry describing an unused utility."
-      }
-    },
-    {
-      "branch": "feat/compaction-max-context-tokens",
-      "summary": "compaction.maxContextTokens caps the auto-compaction trigger at min(contextWindow - reserveTokens, maxContextTokens) in coding-agent and the packages/agent harness, with per-model overrides.",
+      "branch": "fix/opencode-zen-free-tier",
+      "summary": "OpenCode Zen/Go requests carry an opencode/<version> User-Agent, an OpenCode-shaped ses_ session header, and inert bash/read tool declarations so the free-tier gate accepts Pi (all request paths, including compaction and compat complete()). Kept in core: an extension cannot preserve builtin routing for other providers, credential-pool key rotation, and models.json custom models at once.",
       "base": "local",
       "mergeIntoLocal": true,
       "drift": {
         "type": "grep-absent",
         "ref": "upstream/main",
-        "file": "packages/coding-agent/src/core/compaction/compaction.ts",
-        "pattern": "maxContextTokens",
-        "note": "REDUNDANT if upstream adds its own configurable cap on the compaction trigger point."
+        "file": "packages/ai/src/providers/opencode-headers.ts",
+        "pattern": "formatOpenCodeSessionId",
+        "note": "REDUNDANT if upstream sends OpenCode client identity and session headers itself."
       }
     }
   ]

@@ -85,8 +85,6 @@ Automatic retries, recovery, compaction, or queued work can continue afterward.
 
 Use the exported declarations in [`extensions/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/extensions/types.ts) for exact event, context, tool, and result types.
 
-The DysektAI fork also exposes `pi.getExtensions()` for runtime introspection. It returns a snapshot of successfully loaded extensions with `name`, `path`, canonical `scope` (`project`, `user`, `package`, or `cli`), and optional `source` metadata; changing the returned array does not affect Pi's internal state.
-
 ## Follow the extension contracts
 
 <a id="events"></a>

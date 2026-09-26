@@ -54,7 +54,6 @@ Available built-in tools are `read`, `bash`, `powershell`, `edit`, `write`, `gre
 | `compaction.enabled` | boolean | `true` | Enable automatic compaction. |
 | `compaction.reserveTokens` | number | `16384` | Tokens reserved for the model response. |
 | `compaction.keepRecentTokens` | number | `20000` | Recent tokens retained without summarization. |
-| `compaction.maxContextTokens` | number | None | Cap on the auto-compaction trigger point; unset leaves the trigger at `contextWindow - reserveTokens`. |
 | `compaction.modelOverrides` | object | None | Per-model token settings keyed by exact `provider/modelId`. |
 
 <a id="per-model-compaction-overrides"></a>

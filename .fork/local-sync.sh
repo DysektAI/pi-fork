@@ -16,7 +16,7 @@
 # GitHub Action's job. It never rewrites history (ff-only) and never forces.
 #
 # Invoked by: systemd user unit pi-fork-local-sync.service
-# Manual run: bash ~/.local/share/pi-fork/local-sync.sh
+# Manual run: bash .fork/local-sync.sh
 set -uo pipefail
 
 REPO_ROOT="${PI_FORK_ROOT:-/home/lab/pi-fork}"
