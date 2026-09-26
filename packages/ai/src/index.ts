@@ -33,6 +33,7 @@ export type {
 export * from "./models.ts";
 export * from "./models-store.ts";
 export * from "./providers/faux.ts";
+export { formatOpenCodeSessionId } from "./providers/opencode-headers.ts";
 export * from "./session-resources.ts";
 export * from "./types.ts";
 export * from "./utils/assistant-message-frame.ts";

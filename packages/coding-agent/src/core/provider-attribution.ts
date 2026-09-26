@@ -1,4 +1,4 @@
-import type { Api, Model, ProviderHeaders } from "@earendil-works/pi-ai";
+import { type Api, formatOpenCodeSessionId, type Model, type ProviderHeaders } from "@earendil-works/pi-ai";
 import type { SettingsManager } from "./settings-manager.ts";
 import { isInstallTelemetryEnabled } from "./telemetry.ts";
 
@@ -73,7 +73,8 @@ function getSessionHeaders(model: Model<Api>, sessionId: string | undefined): Re
 	) {
 		return undefined;
 	}
-	return { "x-opencode-session": sessionId, "x-opencode-client": "pi" };
+	// Shaped like OpenCode session ids; the Zen free-tier gate rejects other formats.
+	return { "x-opencode-session": formatOpenCodeSessionId(sessionId), "x-opencode-client": "pi" };
 }
 
 export function mergeProviderAttributionHeaders(
