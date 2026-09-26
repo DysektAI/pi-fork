@@ -14,7 +14,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { basename, dirname, extname } from "node:path";
+import { basename, dirname } from "node:path";
 import type {
 	Agent,
 	AgentContext,
@@ -84,7 +84,6 @@ import {
 	ExtensionRunner,
 	type ExtensionUIContext,
 	type InputSource,
-	type LoadedExtensionInfo,
 	type MessageEndEvent,
 	type MessageStartEvent,
 	type MessageUpdateEvent,
@@ -2996,34 +2995,6 @@ export class AgentSession {
 		return `extension:${name}`;
 	}
 
-	private getLoadedExtensionName(extensionPath: string, sourceInfo: SourceInfo): string {
-		const inlineName = extensionPath.match(/^<inline:(.+)>$/)?.[1];
-		if (inlineName) return inlineName;
-
-		const fileName = basename(extensionPath, extname(extensionPath));
-		if (fileName !== "index") return fileName;
-
-		const parentName = basename(dirname(extensionPath));
-		if (parentName !== "extensions" || sourceInfo.origin !== "package") return parentName;
-
-		return sourceInfo.source.replace(/^(?:npm|git):/, "") || parentName;
-	}
-
-	private getLoadedExtensions(): LoadedExtensionInfo[] {
-		return this._resourceLoader.getExtensions().extensions.map((extension) => {
-			const sourceInfo = extension.sourceInfo;
-			let scope: LoadedExtensionInfo["scope"] = sourceInfo.scope === "user" ? "user" : "project";
-			if (sourceInfo.scope === "temporary") scope = "cli";
-			if (sourceInfo.origin === "package") scope = "package";
-			return {
-				name: this.getLoadedExtensionName(extension.path, sourceInfo),
-				path: extension.path,
-				scope,
-				source: sourceInfo.source,
-			};
-		});
-	}
-
 	private _applyExtensionBindings(runner: ExtensionRunner): void {
 		runner.setUIContext(this._extensionUIContext, this._extensionMode);
 		runner.bindCommandContext(this._extensionCommandContextActions);
@@ -3112,7 +3083,6 @@ export class AgentSession {
 				},
 				getActiveTools: () => this.getActiveToolNames(),
 				getAllTools: () => this.getAllTools(),
-				getExtensions: () => this.getLoadedExtensions(),
 				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
 				refreshTools: () => this._refreshToolRegistry(),
 				getCommands,

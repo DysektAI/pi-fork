@@ -376,7 +376,7 @@ export function createShellToolDefinition(
 				clearUpdateTimer();
 			}
 		},
-		...createShellRenderers(config.prompt, config.shellName),
+		...createShellRenderers(config.prompt),
 	};
 }
 

@@ -18,20 +18,17 @@ import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dis
 export interface CompactionModelOverride {
 	reserveTokens?: number;
 	keepRecentTokens?: number;
-	maxContextTokens?: number;
 }
 
 const DEFAULT_COMPACTION_TOKEN_SETTINGS: Required<CompactionModelOverride> = {
 	reserveTokens: 16384,
 	keepRecentTokens: 20000,
-	maxContextTokens: Number.MAX_SAFE_INTEGER,
 };
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
-	maxContextTokens?: number; // default: Number.MAX_SAFE_INTEGER (no cap)
 	modelOverrides?: Record<string, CompactionModelOverride>; // exact "provider/modelId" keys
 }
 
@@ -901,22 +898,16 @@ export class SettingsManager {
 		return this.getCompactionTokenSetting("keepRecentTokens", model);
 	}
 
-	getCompactionMaxContextTokens(model?: Pick<Model<string>, "provider" | "id">): number {
-		return this.getCompactionTokenSetting("maxContextTokens", model);
-	}
-
 	/** Resolve each token setting through model override, ordinary setting, then built-in default. */
 	getCompactionSettings(model?: Pick<Model<string>, "provider" | "id">): {
 		enabled: boolean;
 		reserveTokens: number;
 		keepRecentTokens: number;
-		maxContextTokens: number;
 	} {
 		return {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(model),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(model),
-			maxContextTokens: this.getCompactionMaxContextTokens(model),
 		};
 	}
 

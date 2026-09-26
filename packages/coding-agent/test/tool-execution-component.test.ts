@@ -161,7 +161,7 @@ describe("ToolExecutionComponent parity", () => {
 		);
 		component.updateResult({ content: [], details: { diff: "+1 after", firstChangedLine: 1 }, isError: false });
 		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("[Edit Tool]");
+		expect(rendered).toContain("edit");
 		expect(rendered).toContain("README.md");
 		expect(rendered).not.toContain(":1");
 	});
@@ -236,26 +236,6 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).not.toMatch(/line-4000[^\n]*\n[^\S\n]*\n[^\S\n]*\n \[Full output:/);
 		expect(rendered).toContain("Truncated: showing 2000 of 4000 lines");
 		expect(rendered).not.toContain("[Showing lines 2001-4000 of 4000. Full output:");
-	});
-
-	test("collapses a multi-line bash command into a single title line", () => {
-		const command = ['echo "start" \\', '  && node -e "', "    console.log('hello');", '  "'].join("\n");
-		const tool = createBashToolDefinition(process.cwd());
-		const component = new ToolExecutionComponent(
-			"bash",
-			"tool-bash-multiline",
-			{ command },
-			{},
-			tool,
-			createFakeTui(),
-			process.cwd(),
-		);
-
-		const titleLine = stripAnsi(component.render(200).join("\n"))
-			.split("\n")
-			.find((line) => line.includes("$ echo"));
-		expect(titleLine).toBeDefined();
-		expect(titleLine).toContain(`$ echo "start" \\ && node -e " console.log('hello'); "`);
 	});
 
 	// Issue #9628: keep short durations precise and make long shell durations readable.
@@ -589,7 +569,7 @@ describe("ToolExecutionComponent parity", () => {
 		);
 
 		const collapsed = stripAnsi(component.render(120).join("\n"));
-		expect(collapsed).toContain("[Read Tool]");
+		expect(collapsed).toContain("read");
 		expect(collapsed).toContain("notes.txt");
 		expect(collapsed).not.toContain("hidden content");
 

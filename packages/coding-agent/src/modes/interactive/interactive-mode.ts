@@ -1310,7 +1310,7 @@ export class InteractiveMode {
 
 	private getMarkdownThemeWithSettings(): MarkdownTheme {
 		return {
-			...getMarkdownTheme(this.sessionManager.getCwd()),
+			...getMarkdownTheme(),
 			codeBlockIndent: this.settingsManager.getCodeBlockIndent(),
 			codeBlockBorderStyle: this.settingsManager.getCodeBlockBorderStyle(),
 		};

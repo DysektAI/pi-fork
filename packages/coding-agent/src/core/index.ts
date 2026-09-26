@@ -72,8 +72,6 @@ export {
 	type ExtensionUIContext,
 	type InlineExtension,
 	type LoadExtensionsResult,
-	type LoadedExtensionInfo,
-	type LoadedExtensionScope,
 	type MessageRenderer,
 	type NormalizedBuildSystemPromptOptions,
 	type RegisteredCommand,

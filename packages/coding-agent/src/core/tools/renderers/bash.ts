@@ -40,28 +40,12 @@ function formatDuration(ms: number): string {
 
 	return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${remainder}s`;
 }
-function formatShellCall(
-	args: { command?: string; timeout?: number } | undefined,
-	prompt: string,
-	shellName: string,
-): string {
+function formatShellCall(args: { command?: string; timeout?: number } | undefined, prompt: string): string {
 	const command = str(args?.command);
 	const timeout = args?.timeout as number | undefined;
 	const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
-	// Collapse multi-line commands (heredocs, `node -e` scripts, &&-chains split
-	// across lines) into a single title line. The raw command stays intact in the
-	// tool args and output; the title is only a label, and embedded newlines
-	// would otherwise render as a full-width padded block per source line.
-	const singleLineCommand = command ? command.replace(/\s+/g, " ").trim() : command;
-	const commandDisplay =
-		command === null ? invalidArgText(theme) : singleLineCommand ? singleLineCommand : theme.fg("toolOutput", "...");
-	// Header on its own line, then the command beneath it, so it reads as a
-	// labeled tool call rather than "bash" running inline with the command.
-	// Fork: capitalize so bash renders as "[Bash Tool]" while PowerShell keeps its
-	// own casing ("[PowerShell Tool]").
-	const toolLabel = shellName.charAt(0).toUpperCase() + shellName.slice(1);
-	const header = theme.fg("toolTitle", theme.bold(`[${toolLabel} Tool]`)) + timeoutSuffix;
-	return `${header}\n${theme.fg("toolTitle", `${prompt} ${commandDisplay}`)}`;
+	const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
+	return theme.fg("toolTitle", theme.bold(`${prompt} ${commandDisplay}`)) + timeoutSuffix;
 }
 function rebuildBashResultRenderComponent(
 	component: BashResultRenderComponent,
@@ -146,10 +130,7 @@ function rebuildBashResultRenderComponent(
 }
 
 /** Shell renderers are shared by bash and powershell, which differ only in the prompt they display. */
-export function createShellRenderers(
-	prompt: string,
-	shellName: string,
-): Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> {
+export function createShellRenderers(prompt: string): Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> {
 	return {
 		renderCall(args, _theme, context) {
 			const state = context.state;
@@ -158,7 +139,7 @@ export function createShellRenderers(
 				state.endedAt = undefined;
 			}
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(formatShellCall(args as { command?: string; timeout?: number } | undefined, prompt, shellName));
+			text.setText(formatShellCall(args as { command?: string; timeout?: number } | undefined, prompt));
 			return text;
 		},
 		renderResult(result, options, _theme, context) {

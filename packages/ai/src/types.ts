@@ -67,7 +67,6 @@ export type KnownProvider =
 	| "meta"
 	| "cloudflare-workers-ai"
 	| "cloudflare-ai-gateway"
-	| "synthetic"
 	| "qwen-token-plan"
 	| "qwen-token-plan-cn"
 	| "qwen-token-plan-individual"

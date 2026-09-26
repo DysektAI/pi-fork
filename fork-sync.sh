@@ -155,10 +155,10 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 	(
 		cd packages/coding-agent
 		npx vitest --run --maxWorkers=1 --pool=forks \
-			test/theme-missing-tokens.test.ts \
 			test/footer-width.test.ts \
-			test/theme-toolpath.test.ts \
-			test/markdown-path-linkify.test.ts
+			test/model-selector.test.ts \
+			test/model-resolver.test.ts \
+			test/version-check.test.ts
 	)
 fi
 

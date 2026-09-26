@@ -35,9 +35,7 @@ export function validateCompactionSettings(settings: CompactionSettings): void {
 		!Number.isSafeInteger(settings.reserveTokens) ||
 		settings.reserveTokens < 0 ||
 		!Number.isSafeInteger(settings.keepRecentTokens) ||
-		settings.keepRecentTokens < 0 ||
-		(settings.maxContextTokens !== undefined &&
-			(!Number.isSafeInteger(settings.maxContextTokens) || settings.maxContextTokens < 0))
+		settings.keepRecentTokens < 0
 	) {
 		throw new RangeError("Compaction token counts must be finite non-negative safe integers");
 	}

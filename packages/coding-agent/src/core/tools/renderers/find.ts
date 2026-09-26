@@ -21,8 +21,8 @@ function formatFindCall(args: { pattern: string; path?: string; limit?: number }
 	const limit = args?.limit;
 	const invalidArg = invalidArgText(theme);
 	let text =
-		theme.fg("toolTitle", theme.bold("[Find Tool]")) +
-		"\n" +
+		theme.fg("toolTitle", theme.bold("find")) +
+		" " +
 		(pattern === null ? invalidArg : theme.fg("accent", pattern || "")) +
 		theme.fg("toolOutput", ` in ${path === null ? invalidArg : path}`);
 	if (limit !== undefined) {

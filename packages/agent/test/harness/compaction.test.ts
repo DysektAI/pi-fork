@@ -169,18 +169,6 @@ describe("harness compaction", () => {
 		expect(shouldCompact(95000, 100000, { ...settings, enabled: false })).toBe(false);
 	});
 
-	it("caps the trigger point below the context window", () => {
-		const settings: CompactionSettings = {
-			enabled: true,
-			reserveTokens: 10000,
-			keepRecentTokens: 20000,
-			maxContextTokens: 400000,
-		};
-		expect(shouldCompact(400001, 1000000, settings)).toBe(true);
-		expect(shouldCompact(400000, 1000000, settings)).toBe(false);
-		expect(shouldCompact(90001, 100000, settings)).toBe(true);
-	});
-
 	it("finds a cut point based on token differences", () => {
 		const entries: Entry[] = [];
 		let parentId: string | null = null;

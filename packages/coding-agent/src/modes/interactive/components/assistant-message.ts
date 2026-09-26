@@ -141,12 +141,6 @@ export class AssistantMessageComponent extends Container {
 
 				const runIndex = thinkingRunIndex++;
 				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
-				// Label each visible coalesced thinking run so the normalized reasoning channel is explicit.
-				if (!hidden) {
-					this.contentContainer.addChild(
-						new Text(theme.bold(theme.fg("thinkingText", "[Thinking]")), this.outputPad, 0),
-					);
-				}
 				const thinkingComponent = hidden
 					? new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0)
 					: new Markdown(

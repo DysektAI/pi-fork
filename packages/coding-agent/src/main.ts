@@ -64,12 +64,7 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/tru
 import { builtInExtensions } from "./extensions/index.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
-import {
-	getThemeMissingTokenWarning,
-	initTheme,
-	setThemeJsonValidator,
-	stopThemeWatcher,
-} from "./modes/interactive/theme/theme.ts";
+import { initTheme, setThemeJsonValidator, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { validateThemeJson } from "./modes/interactive/theme/theme-json.ts";
 import { cleanupManagedInstall, handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
@@ -889,21 +884,8 @@ export async function main(args: string[], options?: MainOptions) {
 	time("prepareInitialMessage");
 	// pi reads user-authored themes, so it opts into full validation before any theme loads.
 	setThemeJsonValidator(validateThemeJson);
-	const themeInit = initTheme(settingsManager.getTheme(), appMode === "interactive");
+	initTheme(settingsManager.getTheme(), appMode === "interactive");
 	time("initTheme");
-
-	if (appMode === "interactive") {
-		// Surface the silent theme fallback (when the configured theme failed to
-		// load) and a non-fatal hint when the active custom theme omits optional
-		// color tokens the app now supports (e.g. thinkingMax, toolPath).
-		if (themeInit.fallback) {
-			console.warn(chalk.yellow(themeInit.fallback));
-		}
-		const themeWarning = getThemeMissingTokenWarning();
-		if (themeWarning) {
-			console.warn(chalk.yellow(themeWarning));
-		}
-	}
 
 	// Show deprecation warnings in interactive mode
 	if (appMode === "interactive" && deprecationWarnings.length > 0) {
