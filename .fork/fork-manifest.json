@@ -10,7 +10,7 @@
   "notes": [
     "Scope: retained fork-only patches on local, plus branches deliberately NOT merged. Standalone extensions keep development branches in this repo but ship from DysektAI/pi-extensions (see the notes below); listing them as features would falsely imply local carries their code.",
     "Branches NOT merged into local and deliberately not listed here, because the canonical rebuild rebases every independent entry and rebuilds every stacked one: feat/notes-box-extension, feat/task-tracker-extension, feat/discord-extension, feat/web-search-extension, feat/session-recap-extension, feat/auto-title-extension, feat/auto-update-extension, feat/continue-button-extension, feat/config-center-extension, feat/credential-pool-extension (all delivered as extensions from DysektAI/pi-extensions), feat/read-outline-view (same, via read-full-header + _shared/read-outline), and feat/footer-thinking-level-color (experimental, stacked on absorbed feat/max-thinking-level).",
-    "Absorbed upstream, no entry needed: feat/max-thinking-level and refactor/deduplicate-shared-utils (its branch no longer exists).",
+    "Absorbed upstream, no entry needed: feat/max-thinking-level. refactor/deduplicate-shared-utils was only partly absorbed; its remaining delta is listed as a feature.",
     "The canonical feat/fork-tooling copy of this manifest still marks the extension and outline branches mergeIntoLocal: true. Reconcile those flags before adopting that branch's fork-sync.sh: its rebuild rebases every listed independent branch onto the new main, rebuilds every stacked one, merges each mergeIntoLocal branch into local, and refuses to continue while any listed branch is stale.",
     "Adoption is a history-policy decision, not a routine tooling update: the canonical fork-sync.sh rebuilds local from main plus feature merges (git switch -C local main) and force-pushes it with --force-with-lease, whereas this branch's fork-sync.sh keeps normal merge history and pushes without force (FORK.md, 'Syncing with upstream'). A rebuild rewrites local's published lineage and would orphan the ancestry of the existing 0.86.1+local.N release tags.",
     "Moved to DysektAI/pi-extensions (v0.5.0) and removed from local: [Thinking] label (thinking-label), [X Tool] call headers + path colour + VS Code paths (tool-headers), inline-code path links (path-links), Synthetic provider (synthetic), compaction.maxContextTokens (context-management). Dropped without replacement: toolPath theme token and missing-token warning, pi.getExtensions() (startup-welcome uses tool/command sourceInfo), stripGhostTokens (never called)."
@@ -114,6 +114,97 @@
         "file": "packages/ai/src/providers/opencode-headers.ts",
         "pattern": "formatOpenCodeSessionId",
         "note": "REDUNDANT if upstream sends OpenCode client identity and session headers itself."
+      }
+    },
+    {
+      "branch": "feat/fork-release-channel",
+      "summary": "Verified fork source checkouts follow DysektAI/pi-fork GitHub releases for version checks, and `pi update --self` fast-forwards the checkout to origin/local and rebuilds (config.ts, version-check.ts, package-manager-cli.ts, release changelog URL). See FORK.md 'Releases and self-update'.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/utils/version-check.ts",
+        "pattern": "DysektAI/pi-fork",
+        "note": "Inherently fork-only; stays ACTIVE."
+      }
+    },
+    {
+      "branch": "fix/anthropic-usage-normalization",
+      "summary": "Anthropic streams re-derive fresh-only input tokens from overlapping input/cache buckets on every usage event, including proxy deltas that omit input_tokens.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/api/anthropic-messages.ts",
+        "pattern": "normalizeAnthropicInputTokens",
+        "note": "REDUNDANT if upstream normalizes Anthropic input vs cache buckets itself."
+      }
+    },
+    {
+      "branch": "fix/remote-catalog-native-refresh",
+      "summary": "withRemoteCatalog leaves providers that implement refreshModels unwrapped so their own refresh/persistence runs and an empty pi.dev overlay cannot overwrite their cached catalog.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/remote-catalog-provider.ts",
+        "pattern": "refreshModels\\) return provider",
+        "note": "REDUNDANT if upstream skips wrapping native dynamic providers."
+      }
+    },
+    {
+      "branch": "fix/model-scope-exact-glob",
+      "summary": "Model scope patterns containing glob characters first try an exact model reference, and invalid thinking-level suffixes produce a diagnostic instead of breaking the match.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/model-resolver.ts",
+        "pattern": "fullExactMatch",
+        "note": "REDUNDANT if upstream resolves exact references before glob expansion."
+      }
+    },
+    {
+      "branch": "refactor/deduplicate-shared-utils",
+      "summary": "coding-agent truncate.ts re-exports shared truncation types/constants from pi-agent-core; truncateTail keeps the byte-truncation classification in both packages; read tools shell-quote the path in the over-long-line bash hint.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/tools/truncate.ts",
+        "pattern": "from \"@earendil-works/pi-agent-core\"",
+        "note": "REDUNDANT if upstream re-exports truncation types from pi-agent-core. Re-check the truncateTail fix and read-tool quotedPath hint separately before dropping."
+      }
+    },
+    {
+      "branch": "feat/user-bash-header",
+      "summary": "User-invoked ! commands render a bold [Bash] title above the command, matching the [X Tool] headers from pi-extensions tool-headers. Kept in core: BashExecutionComponent has no extension render hook.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/modes/interactive/components/bash-execution.ts",
+        "pattern": "\\[Bash\\]",
+        "note": "Move to pi-extensions tool-headers if upstream adds a user-bash render hook."
+      }
+    },
+    {
+      "branch": "fix/pr-review-hardening",
+      "summary": "Review follow-ups kept in core: Vertex accepts Google Cloud metadata credentials without an ADC file, the external editor passes the prompt path through an env var under a shell, and aborted compaction summaries throw AbortError.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/providers/google-vertex.ts",
+        "pattern": "Google Cloud metadata credentials",
+        "note": "REDUNDANT if upstream supports Vertex metadata-server credentials; re-check external-editor.ts and compaction.ts separately."
       }
     }
   ]
