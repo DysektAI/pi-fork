@@ -282,14 +282,7 @@ describe("Anthropic raw SSE parsing", () => {
 		} as unknown as Anthropic;
 
 		await streamAnthropic(
-			// Keep this protocol test independent of the live OpenRouter catalog.
-			{
-				...getModel("anthropic", "claude-haiku-4-5"),
-				id: "anthropic/claude-3-haiku",
-				provider: "openrouter",
-				baseUrl: "https://openrouter.ai/api/v1",
-				reasoning: false,
-			},
+			getModel("openrouter", "anthropic/claude-haiku-4.5"),
 			normalizeContext({ messages: [{ role: "user", content: "Hello", timestamp: 1 }] }),
 			{ client, thinkingEnabled: false },
 		).result();
