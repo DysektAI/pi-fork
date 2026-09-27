@@ -1600,7 +1600,9 @@ export class DefaultPackageManager implements PackageManager {
 				],
 			};
 		} catch {
-			await this.runCommand("git", ["remote", "set-head", "origin", "-a"], { cwd: installedPath }).catch(() => {});
+			// Captured so the "'origin/HEAD' is unchanged" diagnostic does not leak
+			// into (and interleave with) parallel update output.
+			await this.runGitRemoteCommand(installedPath, ["remote", "set-head", "origin", "-a"]).catch(() => "");
 			const head = await this.runCommandCapture("git", ["rev-parse", "origin/HEAD"], {
 				cwd: installedPath,
 				timeoutMs: NETWORK_TIMEOUT_MS,
@@ -1862,11 +1864,12 @@ export class DefaultPackageManager implements PackageManager {
 		const targetDir = this.getGitInstallPath(source, scope);
 		if (existsSync(targetDir)) {
 			if (source.ref) {
-				await this.ensureGitRef(targetDir, ["fetch", "origin", source.ref], "FETCH_HEAD");
+				await this.ensurePinnedGitRef(targetDir, source.ref);
 				return;
 			}
 			const target = await this.getLocalGitUpdateTarget(targetDir);
 			await this.ensureGitRef(targetDir, target.fetchArgs, target.ref);
+			await this.reattachGitDefaultBranch(targetDir, target);
 			return;
 		}
 		const gitRoot = this.getGitInstallRoot(scope);
@@ -1900,12 +1903,66 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		if (source.ref) {
-			await this.ensureGitRef(targetDir, ["fetch", "origin", source.ref], "FETCH_HEAD");
+			await this.ensurePinnedGitRef(targetDir, source.ref);
 			return;
 		}
 
 		const target = await this.getLocalGitUpdateTarget(targetDir);
 		await this.ensureGitRef(targetDir, target.fetchArgs, target.ref);
+		await this.reattachGitDefaultBranch(targetDir, target);
+	}
+
+	/**
+	 * Reconcile a checkout to a pinned ref. A full commit SHA is immutable, so when
+	 * HEAD already matches it there is nothing to fetch; skip the network round trip.
+	 */
+	private async ensurePinnedGitRef(targetDir: string, ref: string): Promise<void> {
+		if (/^[0-9a-f]{40}$/i.test(ref)) {
+			const localHead = await this.runCommandCapture("git", ["rev-parse", "HEAD"], {
+				cwd: targetDir,
+				timeoutMs: NETWORK_TIMEOUT_MS,
+			}).catch(() => "");
+			if (localHead.trim().toLowerCase() === ref.toLowerCase()) {
+				const markerPath = this.getGitUpdateMarkerPath(targetDir);
+				if (existsSync(markerPath)) {
+					await this.cleanAndInstallGitDependencies(targetDir, markerPath);
+				} else {
+					await this.repairMissingGitDependencies(targetDir);
+				}
+				return;
+			}
+		}
+		await this.ensureGitRef(targetDir, ["fetch", "--no-tags", "origin", ref], "FETCH_HEAD");
+	}
+
+	/**
+	 * Checkouts that were once pinned end up on a detached HEAD after being unpinned,
+	 * which forces every later update through the `remote set-head` network fallback.
+	 * Re-attach them to a tracking default branch when that cannot lose local commits.
+	 */
+	private async reattachGitDefaultBranch(
+		targetDir: string,
+		target: { ref: string; fetchArgs: string[] },
+	): Promise<void> {
+		if (target.ref !== "origin/HEAD") return;
+		const refspec = target.fetchArgs[target.fetchArgs.length - 1] ?? "";
+		const branch = /^\+refs\/heads\/(.+):refs\/remotes\/origin\/\1$/.exec(refspec)?.[1];
+		if (!branch) return;
+		const capture = (args: string[]) =>
+			this.runCommandCapture("git", args, { cwd: targetDir, timeoutMs: NETWORK_TIMEOUT_MS });
+		try {
+			const existing = await capture(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).catch(() => "");
+			if (existing.trim()) {
+				const ahead = Number.parseInt(
+					await capture(["rev-list", "--count", `refs/remotes/origin/${branch}..refs/heads/${branch}`]),
+					10,
+				);
+				if (!Number.isFinite(ahead) || ahead > 0) return;
+			}
+			await capture(["checkout", "-q", "-B", branch, "--track", `origin/${branch}`]);
+		} catch {
+			// Staying detached is harmless; the next update uses the origin/HEAD fallback.
+		}
 	}
 
 	private hasMissingGitDependencies(targetDir: string): boolean {
@@ -1982,9 +2039,51 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 
+		await this.preserveLocalGitWork(targetDir, localHead.trim(), commitRef);
 		writeFileSync(markerPath, "", "utf-8");
 		await this.runCommand("git", ["reset", "--hard", commitRef], { cwd: targetDir });
 		await this.cleanAndInstallGitDependencies(targetDir, markerPath);
+	}
+
+	/**
+	 * `reset --hard` + `clean -fdx` would silently discard commits or edits made
+	 * directly inside a managed checkout. Keep them recoverable: stash tracked and
+	 * untracked (non-ignored) edits, and pin local-only commits to a backup branch.
+	 * Best effort: inspection failures never block the update.
+	 */
+	private async preserveLocalGitWork(targetDir: string, localHead: string, commitRef: string): Promise<void> {
+		const capture = (args: string[]) =>
+			this.runCommandCapture("git", args, { cwd: targetDir, timeoutMs: NETWORK_TIMEOUT_MS });
+		const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
+
+		try {
+			const status = await capture(["status", "--porcelain"]);
+			if (status.trim()) {
+				const message = `pi-update-backup-${stamp}`;
+				await capture(["stash", "push", "--include-untracked", "-m", message]);
+				this.emitGitWarning(targetDir, `Stashed uncommitted changes as "${message}" (git stash list).`);
+			}
+		} catch {
+			// Unable to inspect the working tree; continue with the update.
+		}
+
+		try {
+			const ahead = Number.parseInt(await capture(["rev-list", "--count", `${commitRef}..HEAD`]), 10);
+			if (Number.isFinite(ahead) && ahead > 0) {
+				const branch = `pi-backup/${stamp}-${localHead.slice(0, 7)}`;
+				await capture(["branch", "-f", branch, localHead]);
+				this.emitGitWarning(
+					targetDir,
+					`${ahead} local commit${ahead === 1 ? " is" : "s are"} not on the update target; saved to branch ${branch}.`,
+				);
+			}
+		} catch {
+			// Unable to compare histories; continue with the update.
+		}
+	}
+
+	private emitGitWarning(targetDir: string, message: string): void {
+		this.emitProgress({ type: "progress", action: "update", source: targetDir, message: `${targetDir}: ${message}` });
 	}
 
 	private async refreshTemporaryGitSource(source: GitSource, sourceStr: string): Promise<void> {

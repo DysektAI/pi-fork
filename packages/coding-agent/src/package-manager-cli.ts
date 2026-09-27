@@ -38,7 +38,12 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/tru
 import { spawnProcess, spawnProcessSync, waitForChildProcess } from "./utils/child-process.ts";
 import { canonicalizePath, getCwdRelativePath } from "./utils/paths.ts";
 import { getPiUserAgent } from "./utils/pi-user-agent.ts";
-import { formatVersionCheckError, getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
+import {
+	formatVersionCheckError,
+	getLatestPiRelease,
+	getSkippedSourceReleaseNotes,
+	isNewerPackageVersion,
+} from "./utils/version-check.ts";
 import {
 	cleanupWindowsSelfUpdateQuarantine,
 	quarantineWindowsNativeDependencies,
@@ -681,11 +686,13 @@ async function getSelfUpdatePlan(force: boolean): Promise<SelfUpdatePlan> {
 	const packageName = latestRelease.packageName ?? PACKAGE_NAME;
 	const installSpec = `${packageName}@${latestRelease.version}`;
 	if (force || packageName !== PACKAGE_NAME || isNewerPackageVersion(latestRelease.version, VERSION)) {
+		const note =
+			(await getSkippedSourceReleaseNotes(VERSION, latestRelease.version, { retry: true })) ?? latestRelease.note;
 		return {
 			packageName,
 			installSpec,
 			version: latestRelease.version,
-			...(latestRelease.note ? { note: latestRelease.note } : {}),
+			...(note ? { note } : {}),
 			shouldRun: true,
 		};
 	}
@@ -979,6 +986,8 @@ export async function handlePackageCommand(
 	packageManager.setProgressCallback((event) => {
 		if (event.type === "start") {
 			process.stdout.write(chalk.dim(`${event.message}\n`));
+		} else if (event.type === "progress" && event.message) {
+			process.stderr.write(chalk.yellow(`${event.message}\n`));
 		}
 	});
 

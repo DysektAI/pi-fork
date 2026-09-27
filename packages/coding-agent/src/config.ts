@@ -256,6 +256,7 @@ function getSelfUpdateCommandForMethod(
 				"-C",
 				repoRoot,
 				"fetch",
+				"--no-tags",
 				"origin",
 				"local:refs/remotes/origin/local",
 			]);
@@ -270,12 +271,23 @@ function getSelfUpdateCommandForMethod(
 			);
 			const switchBranch = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "switch", "local"]);
 			const update = makeSelfUpdateCommandStep("git", ["-C", repoRoot, "merge", "--ff-only", "origin/local"]);
-			const install = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "ci", "--ignore-scripts"]);
-			const build = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "build"]);
+			const install = makeSelfUpdateCommandStep("npm", [
+				"--prefix",
+				repoRoot,
+				"ci",
+				"--ignore-scripts",
+				"--no-audit",
+				"--no-fund",
+			]);
+			// Refresh only the ignored model data and build offline. `npm run build`
+			// regenerates tracked model catalogs from live APIs, which dirties the
+			// checkout and blocks the next fast-forward update.
+			const hydrate = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "hydrate:model-data"]);
+			const build = makeSelfUpdateCommandStep("npm", ["--prefix", repoRoot, "run", "build:offline"]);
 			return {
 				...fetch,
-				display: [fetch, switchBranch, update, install, build].map((step) => step.display).join(" && "),
-				steps: [fetch, ensureBranch, switchBranch, update, install, build],
+				display: [fetch, switchBranch, update, install, hydrate, build].map((step) => step.display).join(" && "),
+				steps: [fetch, ensureBranch, switchBranch, update, install, hydrate, build],
 			};
 		}
 		case "unknown":

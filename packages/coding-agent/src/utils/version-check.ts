@@ -5,6 +5,7 @@ import { getPiUserAgent } from "./pi-user-agent.ts";
 
 const UPSTREAM_VERSION_URL = "https://pi.dev/api/latest-version";
 const FORK_RELEASES_URL = "https://api.github.com/repos/DysektAI/pi-fork/releases/latest";
+const FORK_RELEASES_LIST_URL = "https://api.github.com/repos/DysektAI/pi-fork/releases";
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
 export interface LatestPiRelease {
@@ -157,6 +158,63 @@ export async function getLatestPiRelease(
 	}
 
 	return fetchLatestFromUpstream(currentVersion, requestOptions);
+}
+
+const MAX_AGGREGATED_RELEASES = 30;
+
+/**
+ * For source installs, `releases/latest` only describes the newest build. When the
+ * user skips several source releases, collect the notes of every release newer
+ * than the running version so the update note covers all incoming changes.
+ * Returns undefined (caller keeps the single latest note) on any failure.
+ */
+export async function getSkippedSourceReleaseNotes(
+	currentVersion: string,
+	latestVersion: string,
+	options: { timeoutMs?: number; retry?: boolean } = {},
+): Promise<string | undefined> {
+	if (process.env.PI_OFFLINE || process.env.PI_UPDATE_API_URL) return undefined;
+	if (detectInstallMethod() !== "source") return undefined;
+	try {
+		const response = await fetchWithRetry(
+			`${FORK_RELEASES_LIST_URL}?per_page=${MAX_AGGREGATED_RELEASES}`,
+			{
+				headers: {
+					"User-Agent": getPiUserAgent(currentVersion),
+					accept: "application/vnd.github+json",
+					"X-GitHub-Api-Version": "2022-11-28",
+				},
+			},
+			{
+				maxRetries: options.retry ? 2 : 0,
+				timeoutMs: options.timeoutMs ?? DEFAULT_VERSION_CHECK_TIMEOUT_MS,
+			},
+		);
+		if (!response.ok) return undefined;
+		const data = (await response.json()) as unknown;
+		if (!Array.isArray(data)) return undefined;
+		const releases = data
+			.map((entry) => {
+				const record = entry as { tag_name?: unknown; body?: unknown; draft?: unknown; prerelease?: unknown };
+				if (record.draft === true || record.prerelease === true) return undefined;
+				if (typeof record.tag_name !== "string" || !record.tag_name.trim()) return undefined;
+				const version = stripLeadingV(record.tag_name.trim());
+				const body = typeof record.body === "string" ? record.body.trim() : "";
+				return { version, body };
+			})
+			.filter((release): release is { version: string; body: string } => release !== undefined)
+			.filter(
+				(release) =>
+					isNewerPackageVersion(release.version, currentVersion) &&
+					(comparePackageVersions(release.version, latestVersion) ?? 1) <= 0,
+			)
+			.sort((left, right) => comparePackageVersions(right.version, left.version) ?? 0);
+		if (releases.length <= 1) return undefined;
+		const sections = releases.map((release) => `### ${release.version}\n\n${release.body || "_No release notes._"}`);
+		return [`${releases.length} source releases since ${currentVersion}:`, ...sections].join("\n\n");
+	} catch {
+		return undefined;
+	}
 }
 
 export async function getLatestPiVersion(

@@ -250,8 +250,8 @@ describe("detectInstallMethod", () => {
 		expect(command?.steps?.slice(0, 4)).toEqual([
 			{
 				command: "git",
-				args: ["-C", root, "fetch", "origin", "local:refs/remotes/origin/local"],
-				display: `git -C ${root} fetch origin local:refs/remotes/origin/local`,
+				args: ["-C", root, "fetch", "--no-tags", "origin", "local:refs/remotes/origin/local"],
+				display: `git -C ${root} fetch --no-tags origin local:refs/remotes/origin/local`,
 			},
 			{
 				command: "git",
@@ -280,8 +280,8 @@ describe("detectInstallMethod", () => {
 		expect(detectInstallMethod()).toBe("source");
 		expect(command?.steps?.[0]).toEqual({
 			command: "git",
-			args: ["-C", root, "fetch", "origin", "local:refs/remotes/origin/local"],
-			display: `git -C ${root} fetch origin local:refs/remotes/origin/local`,
+			args: ["-C", root, "fetch", "--no-tags", "origin", "local:refs/remotes/origin/local"],
+			display: `git -C ${root} fetch --no-tags origin local:refs/remotes/origin/local`,
 		});
 	});
 
@@ -295,6 +295,19 @@ describe("detectInstallMethod", () => {
 
 		expect(command?.steps?.[0]?.args.slice(0, 2)).toEqual(["-C", root]);
 		expect(command?.steps?.[4]?.args.slice(0, 2)).toEqual(["--prefix", root]);
+	});
+
+	test("source updates hydrate model data and build offline to keep the checkout clean", () => {
+		const { root } = createSourceCheckout();
+
+		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
+
+		expect(command?.steps?.slice(4).map((step) => step.args)).toEqual([
+			["--prefix", root, "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+			["--prefix", root, "run", "hydrate:model-data"],
+			["--prefix", root, "run", "build:offline"],
+		]);
+		expect(command?.display).not.toMatch(/run build(?!:)/);
 	});
 
 	test("self-updates npm installs from custom prefixes", () => {

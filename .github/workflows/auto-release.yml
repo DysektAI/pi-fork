@@ -50,6 +50,19 @@ jobs:
 
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # Do not cut an empty release when HEAD is already a source release
+          # (e.g. workflow_dispatch or a re-run on an already-marked commit).
+          EXISTING_TAG=$(git tag --points-at HEAD --list '[0-9]*' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\+local\.[0-9]+$' | head -1 || true)
+          if [ -n "$EXISTING_TAG" ]; then
+            echo "HEAD is already source release ${EXISTING_TAG}; nothing to release"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
           git fetch origin "+refs/tags/${TAG}:refs/tags/${TAG}" 2>/dev/null || true
 
           if git show-ref --verify --quiet "refs/tags/${TAG}"; then
@@ -79,6 +92,7 @@ jobs:
         run: git push --atomic origin HEAD:local "refs/tags/${TAG}"
 
       - name: Create or reuse GitHub release
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -90,13 +104,18 @@ jobs:
             exit 0
           fi
 
-          LAST_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | grep -v '^v' | head -1)
+          # Only consider source-release tags; archive/*, backup/*, and legacy/* tags
+          # sort above version tags and would produce a wrong changelog range.
+          LAST_TAG=$(git tag --list '[0-9]*' --sort=-version:refname \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(\+|\.)local\.[0-9]+$' \
+            | grep -vxF "${TAG}" \
+            | head -1 || true)
           if [ -n "$LAST_TAG" ]; then
             RANGE="${LAST_TAG}..${TAG}"
           else
             RANGE="$TAG"
           fi
-          COMMITS=$(git log "$RANGE" --oneline --no-merges | head -20)
+          COMMITS=$(git log "$RANGE" --oneline --no-merges | head -40)
 
           gh release create "$TAG" \
             --verify-tag \

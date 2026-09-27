@@ -5,6 +5,7 @@ import {
 	formatVersionCheckError,
 	getLatestPiRelease,
 	getLatestPiVersion,
+	getSkippedSourceReleaseNotes,
 	isNewerPackageVersion,
 } from "../src/utils/version-check.ts";
 import { allowNetwork } from "./test-network-env.ts";
@@ -177,6 +178,36 @@ describe("version checks", () => {
 			"https://example.test/releases/latest",
 			expect.objectContaining({ headers: expect.any(Object) }),
 		);
+	});
+
+	it("aggregates notes for every skipped source release", async () => {
+		process.env.PI_PACKAGE_DIR = process.cwd();
+		const fetchMock = vi.fn(async (_url: string) =>
+			Response.json([
+				{ tag_name: "1.2.3+local.11", body: "eleven" },
+				{ tag_name: "1.2.3+local.10", body: "ten" },
+				{ tag_name: "1.2.3+local.9", body: "", draft: true },
+				{ tag_name: "1.2.3+local.8", body: "current" },
+			]),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		const note = await getSkippedSourceReleaseNotes("1.2.3+local.8", "1.2.3+local.11");
+
+		expect(note).toContain("2 source releases since 1.2.3+local.8");
+		expect(note?.indexOf("### 1.2.3+local.11")).toBeLessThan(note?.indexOf("### 1.2.3+local.10") ?? 0);
+		expect(note).not.toContain("current");
+		expect(fetchMock.mock.calls[0][0]).toBe("https://api.github.com/repos/DysektAI/pi-fork/releases?per_page=30");
+	});
+
+	it("does not aggregate notes when only one source release was skipped", async () => {
+		process.env.PI_PACKAGE_DIR = process.cwd();
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => Response.json([{ tag_name: "1.2.3+local.9", body: "nine" }])),
+		);
+
+		await expect(getSkippedSourceReleaseNotes("1.2.3+local.8", "1.2.3+local.9")).resolves.toBeUndefined();
 	});
 
 	it("skips automatic api calls when version checks are disabled", async () => {

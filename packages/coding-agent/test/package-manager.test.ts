@@ -842,7 +842,7 @@ Content`,
 
 			await packageManager.install(source);
 
-			expect(runCommandSpy).toHaveBeenCalledWith("git", ["fetch", "origin", "v2"], { cwd: targetDir });
+			expect(runCommandSpy).toHaveBeenCalledWith("git", ["fetch", "--no-tags", "origin", "v2"], { cwd: targetDir });
 			expect(runCommandSpy).toHaveBeenCalledWith("git", ["reset", "--hard", "FETCH_HEAD^{commit}"], {
 				cwd: targetDir,
 			});
@@ -882,6 +882,122 @@ Content`,
 				cwd: targetDir,
 			});
 			expect(runCommandSpy).toHaveBeenCalledWith("git", ["clean", "-fdx"], { cwd: targetDir });
+		});
+
+		it("should not fetch when a checkout already matches its pinned commit SHA", async () => {
+			const sha = "90bb51cae36515a648515b633a81c0c6efc8c74d";
+			const source = `git:github.com/user/repo@${sha}`;
+			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			mkdirSync(targetDir, { recursive: true });
+			settingsManager.setPackages([source]);
+
+			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
+			vi.spyOn(managerWithInternals, "runCommandCapture").mockImplementation(async (_command, args) => {
+				if (args[0] === "rev-parse" && args[1] === "HEAD") return sha;
+				throw new Error(`Unexpected runCommandCapture args: ${args.join(" ")}`);
+			});
+			const runCommandSpy = vi.spyOn(managerWithInternals, "runCommand").mockResolvedValue(undefined);
+
+			await packageManager.update(source);
+
+			expect(runCommandSpy).not.toHaveBeenCalled();
+		});
+
+		it("should preserve local commits and edits before resetting a git checkout", async () => {
+			const source = "git:github.com/user/repo";
+			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			const fetchArgs = ["fetch", "--prune", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main"];
+			mkdirSync(targetDir, { recursive: true });
+			settingsManager.setPackages([source]);
+
+			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
+			vi.spyOn(managerWithInternals, "getLocalGitUpdateTarget").mockResolvedValue({
+				ref: "@{upstream}",
+				head: "new-head",
+				fetchArgs,
+			});
+			const captureCalls: string[][] = [];
+			vi.spyOn(managerWithInternals, "runCommandCapture").mockImplementation(async (_command, args) => {
+				captureCalls.push(args);
+				if (args[0] === "rev-parse" && args[1] === "HEAD") return "abcdef1234567890";
+				if (args[0] === "rev-parse") return "new-head";
+				if (args[0] === "status") return " M extensions/discord.ts";
+				if (args[0] === "rev-list") return "1";
+				return "";
+			});
+			const runCommandSpy = vi.spyOn(managerWithInternals, "runCommand").mockResolvedValue(undefined);
+			const warnings: string[] = [];
+			packageManager.setProgressCallback((event) => {
+				if (event.type === "progress" && event.message) warnings.push(event.message);
+			});
+
+			await packageManager.update(source);
+
+			expect(captureCalls.some((args) => args[0] === "stash" && args.includes("--include-untracked"))).toBe(true);
+			const backup = captureCalls.find((args) => args[0] === "branch");
+			expect(backup?.[1]).toBe("-f");
+			expect(backup?.[2]).toMatch(/^pi-backup\/\d{8}T\d{6}-abcdef1$/);
+			expect(backup?.[3]).toBe("abcdef1234567890");
+			expect(warnings.join("\n")).toContain("saved to branch pi-backup/");
+			expect(runCommandSpy).toHaveBeenCalledWith("git", ["reset", "--hard", "@{upstream}^{commit}"], {
+				cwd: targetDir,
+			});
+		});
+
+		it("should reattach a detached checkout to its default branch after updating", async () => {
+			const source = "git:github.com/user/repo";
+			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			const fetchArgs = ["fetch", "--prune", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main"];
+			mkdirSync(targetDir, { recursive: true });
+			settingsManager.setPackages([source]);
+
+			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
+			vi.spyOn(managerWithInternals, "getLocalGitUpdateTarget").mockResolvedValue({
+				ref: "origin/HEAD",
+				head: "head",
+				fetchArgs,
+			});
+			const captureCalls: string[][] = [];
+			vi.spyOn(managerWithInternals, "runCommandCapture").mockImplementation(async (_command, args) => {
+				captureCalls.push(args);
+				if (args[0] === "rev-parse" && args[1] === "--verify") return "stale-main";
+				if (args[0] === "rev-parse") return "head";
+				if (args[0] === "rev-list") return "0";
+				return "";
+			});
+			vi.spyOn(managerWithInternals, "runCommand").mockResolvedValue(undefined);
+
+			await packageManager.update(source);
+
+			expect(captureCalls).toContainEqual(["checkout", "-q", "-B", "main", "--track", "origin/main"]);
+		});
+
+		it("should keep a detached checkout when its local default branch has unpushed commits", async () => {
+			const source = "git:github.com/user/repo";
+			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			const fetchArgs = ["fetch", "--prune", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main"];
+			mkdirSync(targetDir, { recursive: true });
+			settingsManager.setPackages([source]);
+
+			const managerWithInternals = packageManager as unknown as PackageManagerInternals;
+			vi.spyOn(managerWithInternals, "getLocalGitUpdateTarget").mockResolvedValue({
+				ref: "origin/HEAD",
+				head: "head",
+				fetchArgs,
+			});
+			const captureCalls: string[][] = [];
+			vi.spyOn(managerWithInternals, "runCommandCapture").mockImplementation(async (_command, args) => {
+				captureCalls.push(args);
+				if (args[0] === "rev-parse" && args[1] === "--verify") return "main";
+				if (args[0] === "rev-parse") return "head";
+				if (args[0] === "rev-list") return "3";
+				return "";
+			});
+			vi.spyOn(managerWithInternals, "runCommand").mockResolvedValue(undefined);
+
+			await packageManager.update(source);
+
+			expect(captureCalls.some((args) => args[0] === "checkout")).toBe(false);
 		});
 
 		it("should prefer the package manager after a separator over the outer executable", () => {
