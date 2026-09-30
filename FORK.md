@@ -137,6 +137,10 @@ Behavior that the public extension API can express ships from
 extension API can reproduce them; `.fork/fork-manifest.json` lists each one and
 its drift probe, and its notes record what moved out.
 
+The model selector and user-invoked `!` command display use upstream rendering.
+The former provider-first model layout and `[Bash]` title are retired. Agent
+tool headers remain an independent customization in `DysektAI/pi-extensions`.
+
 ## Absorbed upstream features
 
 Run:

@@ -312,14 +312,6 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		);
 		const endIndex = Math.min(startIndex + maxVisible, this.filteredModels.length);
 
-		// Width of the provider column (across the visible slice) so model ids align
-		// after the leading [provider] badge.
-		let providerWidth = 0;
-		for (let i = startIndex; i < endIndex; i++) {
-			const item = this.filteredModels[i];
-			if (item) providerWidth = Math.max(providerWidth, item.provider.length + 2);
-		}
-
 		// Show visible slice of filtered models
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredModels[i];
@@ -331,11 +323,10 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			const defaultBadge = isDefault ? theme.fg("muted", " · default") : "";
 
 			const cursor = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const badgeText = `[${item.provider}]`.padEnd(providerWidth);
-			const providerBadge = theme.fg("muted", badgeText);
-			const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+			const currentMarker = isCurrent ? theme.fg("accent", "✓ ") : "  ";
 			const modelText = isSelected ? theme.fg("accent", item.id) : item.id;
-			const line = `${cursor}${providerBadge} ${modelText}${defaultBadge}${checkmark}`;
+			const providerBadge = theme.fg("muted", `[${item.provider}]`);
+			const line = `${cursor}${currentMarker}${modelText} ${providerBadge}${defaultBadge}`;
 
 			this.listContainer.addChild(new Text(line, 0, 0));
 		}

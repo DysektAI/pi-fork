@@ -46,15 +46,13 @@ describe("model selector", () => {
 		const getModelRow = (id: string): string | undefined =>
 			stripAnsi(selector.render(120).join("\n"))
 				.split("\n")
-				.find((line) => line.includes(id))
+				.find((line) => line.includes(`${id} [`))
 				?.trimEnd();
 
-		// Fork layout: the padded provider badge leads so model ids align in a column;
-		// the current-model checkmark trails the row.
-		expect(getModelRow("current-model")).toBe(`→ [${currentModel.provider}] current-model ✓`);
+		expect(getModelRow("current-model")).toBe(`→ ✓ current-model [${currentModel.provider}]`);
 		selector.handleInput("\x1b[B");
-		expect(getModelRow("current-model")).toBe(`  [${currentModel.provider}] current-model ✓`);
-		expect(getModelRow("browsed-model")).toBe(`→ [${currentModel.provider}] browsed-model`);
+		expect(getModelRow("current-model")).toBe(`  ✓ current-model [${currentModel.provider}]`);
+		expect(getModelRow("browsed-model")).toBe(`→   browsed-model [${currentModel.provider}]`);
 		selector.dispose();
 	});
 
