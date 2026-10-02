@@ -113,7 +113,7 @@ systemctl --user daemon-reload && systemctl --user enable --now pi-fork-local-sy
 ```
 
 Adapt `PI_FORK_ROOT` and `PATH` in the service unit when the checkout or the
-Node installation lives elsewhere. Upstream integration runs only through the
+Node installation lives elsewhere. Scheduled upstream integration runs through the
 GitHub scheduler; this timer updates the on-disk consumer checkout.
 
 Do not substitute `pi update --self` for fork synchronization. Self-update only
