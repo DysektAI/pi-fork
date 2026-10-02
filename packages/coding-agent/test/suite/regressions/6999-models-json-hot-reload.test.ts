@@ -76,7 +76,7 @@ describe("issue #6999 models.json hot reload", () => {
 
 		await renderedAfterRefresh;
 		const rendered = stripAnsi(selector.render(120).join("\n"));
-		expect(rendered).toContain("[new-provider] new-model");
-		expect(rendered).not.toContain("[old-provider] old-model");
+		expect(rendered).toContain("new-model [new-provider]");
+		expect(rendered).not.toContain("old-model [old-provider]");
 	});
 });

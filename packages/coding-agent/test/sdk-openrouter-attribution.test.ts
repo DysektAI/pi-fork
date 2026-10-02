@@ -5,6 +5,7 @@ import {
 	type Api,
 	type AssistantMessage,
 	createAssistantMessageEventStream,
+	formatOpenCodeSessionId,
 	type Model,
 	normalizeContext,
 	type ProviderHeaders,
@@ -244,7 +245,7 @@ describe("createAgentSession provider attribution headers", () => {
 			sessionId: "opencode-session",
 		});
 
-		expect(headers?.["x-opencode-session"]).toBe("opencode-session");
+		expect(headers?.["x-opencode-session"]).toBe(formatOpenCodeSessionId("opencode-session"));
 		expect(headers?.["x-opencode-client"]).toBe("pi");
 	});
 

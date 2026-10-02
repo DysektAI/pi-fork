@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 function createSourceCheckout(withForkMarkers = true): { root: string; packageDir: string } {
-	const root = mkdtempSync(join(tmpdir(), "pi-source-"));
+	const root = mkdtempSync(join(tmpdir(), "pi source "));
 	const packageDir = join(root, "packages", "coding-agent");
 	mkdirSync(join(root, ".git"), { recursive: true });
 	mkdirSync(packageDir, { recursive: true });
@@ -243,6 +243,7 @@ describe("detectInstallMethod", () => {
 
 	test("fetches origin/local before switching a source checkout", () => {
 		const { root } = createSourceCheckout();
+		const displayRoot = `"${root}"`;
 
 		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
 
@@ -251,29 +252,30 @@ describe("detectInstallMethod", () => {
 			{
 				command: "git",
 				args: ["-C", root, "fetch", "--no-tags", "origin", "local:refs/remotes/origin/local"],
-				display: `git -C ${root} fetch --no-tags origin local:refs/remotes/origin/local`,
+				display: `git -C ${displayRoot} fetch --no-tags origin local:refs/remotes/origin/local`,
 			},
 			{
 				command: "git",
 				args: ["-C", root, "branch", "--track", "local", "origin/local"],
-				display: `git -C ${root} branch --track local origin/local`,
+				display: `git -C ${displayRoot} branch --track local origin/local`,
 				allowFailure: true,
 			},
 			{
 				command: "git",
 				args: ["-C", root, "switch", "local"],
-				display: `git -C ${root} switch local`,
+				display: `git -C ${displayRoot} switch local`,
 			},
 			{
 				command: "git",
 				args: ["-C", root, "merge", "--ff-only", "origin/local"],
-				display: `git -C ${root} merge --ff-only origin/local`,
+				display: `git -C ${displayRoot} merge --ff-only origin/local`,
 			},
 		]);
 	});
 
 	test("detects a source checkout behind a linked global shim", () => {
 		const { root } = createLinkedSourceShim();
+		const displayRoot = /\s/.test(root) ? `"${root}"` : root;
 
 		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
 
@@ -281,7 +283,7 @@ describe("detectInstallMethod", () => {
 		expect(command?.steps?.[0]).toEqual({
 			command: "git",
 			args: ["-C", root, "fetch", "--no-tags", "origin", "local:refs/remotes/origin/local"],
-			display: `git -C ${root} fetch --no-tags origin local:refs/remotes/origin/local`,
+			display: `git -C ${displayRoot} fetch --no-tags origin local:refs/remotes/origin/local`,
 		});
 	});
 
