@@ -113,9 +113,8 @@ systemctl --user daemon-reload && systemctl --user enable --now pi-fork-local-sy
 ```
 
 Adapt `PI_FORK_ROOT` and `PATH` in the service unit when the checkout or the
-Node installation lives elsewhere. `.fork/fork-auto-sync.sh` is the older,
-all-in-one local wrapper (it also merges upstream and pushes): do not enable it
-and this timer at the same time.
+Node installation lives elsewhere. Upstream integration runs only through the
+GitHub scheduler; this timer updates the on-disk consumer checkout.
 
 Do not substitute `pi update --self` for fork synchronization. Self-update only
 fast-forwards a consumer checkout to the already-published `origin/local`; it
