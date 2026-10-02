@@ -310,7 +310,7 @@ export class ModelRuntime implements Models {
 		let commandAvailability = this.commandApiKeyAvailability.get(providerId);
 		if (rawKey !== undefined && isCommandConfigValue(rawKey)) {
 			if (commandAvailability?.command !== rawKey) {
-				commandAvailability = { command: rawKey, state: {} };
+				commandAvailability = { command: rawKey, state: { revision: 0 } };
 				this.commandApiKeyAvailability.set(providerId, commandAvailability);
 			}
 		} else {
@@ -571,9 +571,33 @@ export class ModelRuntime implements Models {
 		providerOrModel: string | AnyModel,
 		overrides: ModelRuntimeAuthOverrides = {},
 	): Promise<AuthResult | undefined> {
-		if (typeof providerOrModel === "string") return this.models.getAuth(providerOrModel, overrides);
-		const resolution = await this.models.getAuth(providerOrModel, overrides);
-		if (!resolution) return undefined;
+		const providerId = typeof providerOrModel === "string" ? providerOrModel : providerOrModel.provider;
+		const commandAvailability = this.commandApiKeyAvailability.get(providerId);
+		const previousRevision = commandAvailability?.state.revision;
+		const synchronizeAvailability = async () => {
+			if (
+				commandAvailability &&
+				this.commandApiKeyAvailability.get(providerId) === commandAvailability &&
+				commandAvailability.state.revision !== previousRevision
+			) {
+				// The observation is already committed; cancellation must not leave its snapshot stale.
+				await this.refreshProviderAvailability(providerId, operationSignal());
+			}
+		};
+		let resolution: AuthResult | undefined;
+		try {
+			resolution =
+				typeof providerOrModel === "string"
+					? await this.models.getAuth(providerOrModel, overrides)
+					: await this.models.getAuth(providerOrModel, overrides);
+		} catch (error) {
+			// The availability pass records its error; preserve the original auth failure when present.
+			await synchronizeAvailability().catch(() => {});
+			throw error;
+		}
+		await synchronizeAvailability();
+		overrides.signal?.throwIfAborted();
+		if (typeof providerOrModel === "string" || !resolution) return resolution;
 		const configuredHeaders = resolveConfiguredModelHeaders(
 			providerOrModel,
 			this.config.getProvider(providerOrModel.provider),
@@ -659,6 +683,7 @@ export class ModelRuntime implements Models {
 	getProviderAuthStatus(providerId: string): AuthStatus {
 		if (this.credentials.hasRuntimeApiKey(providerId)) return { configured: true, source: "runtime" };
 		if (this.snapshot.storedProviders.has(providerId)) return { configured: true, source: "stored" };
+		if (this.commandApiKeyAvailability.get(providerId)?.state.available === false) return { configured: false };
 		const configured = configuredRequestAuthStatus(
 			this.config.getProvider(providerId),
 			this.extensionProviders.get(providerId),
@@ -924,6 +949,13 @@ export class ModelRuntime implements Models {
 		configuredStatus: AuthStatus | undefined,
 		type: AuthType,
 	): void {
+		if (
+			!this.snapshot.storedProviders.has(providerId) &&
+			!this.credentials.hasRuntimeApiKey(providerId) &&
+			this.commandApiKeyAvailability.get(providerId)?.state.available === false
+		) {
+			return;
+		}
 		if (!this.snapshot.storedProviders.has(providerId) && !configuredStatus?.configured) return;
 		const configuredProviders = new Set(this.snapshot.configuredProviders).add(providerId);
 		const auth = new Map(this.snapshot.auth);

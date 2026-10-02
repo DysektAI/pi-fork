@@ -117,6 +117,7 @@ export const clearApiKeyCache = clearConfigValueCache;
 /** Last successful command result; availability checks never execute credential commands. */
 export interface ApiKeyCommandAvailability {
 	available?: boolean;
+	revision: number;
 }
 
 function getAllProviderModels(provider: Provider | undefined): readonly AnyModel[] {
@@ -457,7 +458,11 @@ function composeApiKeyAuth(
 				const env = await configContextEnv([rawKey], input.ctx);
 				input.signal.throwIfAborted();
 				const key = resolveApiKeyConfigValue(rawKey, `API key for provider "${providerId}"`, env);
-				if (isCommandConfigValue(rawKey)) commandAvailability.available = key !== undefined;
+				if (isCommandConfigValue(rawKey)) {
+					commandAvailability.available = key !== undefined;
+					// Count unchanged results too so direct lookups retry failed availability synchronization.
+					commandAvailability.revision++;
+				}
 				if (key === undefined) {
 					const headerEnv = await configContextEnv(Object.values(rawHeaders ?? {}), input.ctx);
 					resolveHeadersOrThrow(rawHeaders, `provider "${providerId}"`, headerEnv);
@@ -542,7 +547,7 @@ export function composeModelProvider(
 	base: Provider | undefined,
 	modelConfig: ModelConfig,
 	extension: ProviderConfigInput | undefined,
-	commandAvailability: ApiKeyCommandAvailability = {},
+	commandAvailability: ApiKeyCommandAvailability = { revision: 0 },
 ): Provider {
 	const config = modelConfig.getProvider(providerId);
 	let extensionOAuthCredential: OAuthCredentials | undefined;

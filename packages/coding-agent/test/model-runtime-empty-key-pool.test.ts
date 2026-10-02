@@ -9,9 +9,18 @@ import { InMemoryCodingAgentModelsStore } from "../src/core/models-store.ts";
 let poolDir: string | undefined;
 afterEach(() => {
 	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 	if (poolDir) rmSync(poolDir, { recursive: true });
 	poolDir = undefined;
 });
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
 
 describe("empty API key pools", () => {
 	it("skips network refresh, retains baseline models, and resumes when a key becomes available", async () => {
@@ -54,6 +63,7 @@ describe("empty API key pools", () => {
 		expect(await runtime.checkAuth("zai")).toBeUndefined();
 		expect(await runtime.getAvailable("zai")).toEqual([]);
 		expect(runtime.hasConfiguredAuth("zai")).toBe(false);
+		expect(runtime.getProviderAuthStatus("zai")).toEqual({ configured: false });
 		expect(runtime.getAvailableSnapshot().some((model) => model.provider === "zai")).toBe(false);
 		expect(runtime.getProvider("zai")!.getModels()[0]?.name).toBe("Cached model");
 		expect(await store.read("zai")).toEqual(cached);
@@ -68,6 +78,189 @@ describe("empty API key pools", () => {
 		expect((await runtime.getAuth("zai"))?.auth.apiKey).toBe("test-key");
 		expect(runtime.hasConfiguredAuth("zai")).toBe(true);
 		expect((await runtime.getAvailable("zai")).length).toBeGreaterThan(0);
+	});
+
+	it("synchronizes direct key lookup transitions without a refresh and preserves empty registration state", async () => {
+		poolDir = mkdtempSync(join(tmpdir(), "pi-empty-key-pool-"));
+		const keyFile = join(poolDir, "key");
+		writeFileSync(keyFile, "test-key");
+		const runtime = await ModelRuntime.create({
+			credentials: AuthStorage.inMemory(),
+			modelsPath: null,
+			refreshOnCreate: false,
+		});
+		runtime.registerProvider("zai", { apiKey: `!cat "${keyFile.replace(/\\/g, "/")}"` });
+		await runtime.getAuth("zai");
+		expect(runtime.hasConfiguredAuth("zai")).toBe(true);
+		writeFileSync(keyFile, "");
+		const model = runtime.getModels("zai")[0]!;
+		expect(await runtime.getAuth(model)).toBeUndefined();
+		expect(runtime.hasConfiguredAuth("zai")).toBe(false);
+		expect(runtime.getProviderAuthStatus("zai")).toEqual({ configured: false });
+		expect(runtime.getAvailableSnapshot().some((entry) => entry.provider === "zai")).toBe(false);
+		runtime.registerProvider("zai", { name: "Updated provider name" });
+		expect(runtime.hasConfiguredAuth("zai")).toBe(false);
+		expect(runtime.getProviderAuthStatus("zai")).toEqual({ configured: false });
+		writeFileSync(keyFile, "recovered-key");
+		expect((await runtime.getAuth("zai"))?.auth.apiKey).toBe("recovered-key");
+		expect(runtime.hasConfiguredAuth("zai")).toBe(true);
+		expect(runtime.getProviderAuthStatus("zai").configured).toBe(true);
+		expect(runtime.getAvailableSnapshot().some((entry) => entry.provider === "zai")).toBe(true);
+	});
+
+	it("keeps the latest empty observation when direct lookups overlap", async () => {
+		poolDir = mkdtempSync(join(tmpdir(), "pi-empty-key-pool-"));
+		const keyFile = join(poolDir, "key");
+		writeFileSync(keyFile, "");
+		const credentials = AuthStorage.inMemory();
+		const read = credentials.read.bind(credentials);
+		const firstRead = deferred();
+		const availabilityRead = deferred();
+		const availabilityStarted = deferred();
+		let blockReads = false;
+		let reads = 0;
+		vi.spyOn(credentials, "read").mockImplementation(async (providerId, options) => {
+			if (blockReads && providerId === "zai") {
+				const count = ++reads;
+				if (count === 1) await firstRead.promise;
+				// Two auth lookups precede the three reads in the newer availability pass.
+				if (count === 5) {
+					availabilityStarted.resolve();
+					await availabilityRead.promise;
+				}
+			}
+			return read(providerId, options);
+		});
+		const runtime = await ModelRuntime.create({ credentials, modelsPath: null, refreshOnCreate: false });
+		runtime.registerProvider("zai", { apiKey: `!cat "${keyFile.replace(/\\/g, "/")}"` });
+		await runtime.refresh({ providers: ["zai"], allowNetwork: false });
+		await runtime.getAuth("zai");
+		expect(runtime.hasConfiguredAuth("zai")).toBe(false);
+		blockReads = true;
+		const firstLookup = runtime.getAuth("zai");
+		writeFileSync(keyFile, "test-key");
+		const secondLookup = runtime.getAuth("zai");
+		try {
+			await availabilityStarted.promise;
+			// Let the available-model and auth checks observe the nonempty pool before publication.
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			writeFileSync(keyFile, "");
+			firstRead.resolve();
+			expect(await firstLookup).toBeUndefined();
+			availabilityRead.resolve();
+			await secondLookup;
+		} finally {
+			firstRead.resolve();
+			availabilityRead.resolve();
+		}
+		expect(await runtime.checkAuth("zai")).toBeUndefined();
+		expect(runtime.hasConfiguredAuth("zai")).toBe(false);
+		expect(runtime.getAvailableSnapshot().some((model) => model.provider === "zai")).toBe(false);
+	});
+
+	it("preserves a required header error when availability synchronization also fails", async () => {
+		const credentials = AuthStorage.inMemory();
+		const read = credentials.read.bind(credentials);
+		let failReads = false;
+		let reads = 0;
+		vi.spyOn(credentials, "read").mockImplementation(async (providerId, options) => {
+			if (failReads && providerId === "zai" && ++reads >= 2) {
+				throw new Error("availability credential read failed");
+			}
+			return read(providerId, options);
+		});
+		const runtime = await ModelRuntime.create({ credentials, modelsPath: null, refreshOnCreate: false });
+		runtime.registerProvider("zai", { apiKey: "!printf ''", headers: { "x-required": "!exit 1" } });
+		await runtime.refresh({ providers: ["zai"], allowNetwork: false });
+		failReads = true;
+		await expect(runtime.getAuth("zai")).rejects.toThrow('provider "zai" header "x-required"');
+		expect(runtime.getError()).toContain("availability credential read failed");
+	});
+
+	it("retries failed availability synchronization when the command still returns empty", async () => {
+		const credentials = AuthStorage.inMemory();
+		const read = credentials.read.bind(credentials);
+		let failRead = false;
+		let reads = 0;
+		vi.spyOn(credentials, "read").mockImplementation(async (providerId, options) => {
+			if (failRead && providerId === "zai" && ++reads === 2) {
+				throw new Error("availability credential read failed");
+			}
+			return read(providerId, options);
+		});
+		const runtime = await ModelRuntime.create({ credentials, modelsPath: null, refreshOnCreate: false });
+		runtime.registerProvider("zai", { apiKey: "!printf ''" });
+		await runtime.refresh({ providers: ["zai"], allowNetwork: false });
+		failRead = true;
+		await expect(runtime.getAuth("zai")).rejects.toThrow("availability credential read failed");
+		expect(runtime.getError()).toContain("availability credential read failed");
+		await expect(runtime.getAuth("zai")).resolves.toBeUndefined();
+		expect(await runtime.checkAuth("zai")).toBeUndefined();
+		expect(runtime.hasConfiguredAuth("zai")).toBe(false);
+		expect(runtime.getAvailableSnapshot().some((model) => model.provider === "zai")).toBe(false);
+		expect(runtime.getError()).toBeUndefined();
+	});
+
+	it("synchronizes an empty observation when header resolution cancels the lookup", async () => {
+		const runtime = await ModelRuntime.create({
+			credentials: AuthStorage.inMemory(),
+			modelsPath: null,
+			refreshOnCreate: false,
+		});
+		runtime.registerProvider("zai", { apiKey: "!printf ''", headers: { "x-required": "$ABORT_HEADER" } });
+		await runtime.refresh({ providers: ["zai"], allowNetwork: false });
+		expect(runtime.hasConfiguredAuth("zai")).toBe(true);
+		expect(runtime.getAvailableSnapshot().some((model) => model.provider === "zai")).toBe(true);
+		const controller = new AbortController();
+		const reason = new Error("cancelled after key observation");
+		await expect(
+			runtime.getAuth("zai", {
+				signal: controller.signal,
+				env: {
+					get ABORT_HEADER() {
+						controller.abort(reason);
+						return "header-value";
+					},
+				},
+			}),
+		).rejects.toBe(reason);
+		expect(controller.signal.aborted).toBe(true);
+		expect(runtime.hasConfiguredAuth("zai")).toBe(false);
+		expect(runtime.getProviderAuthStatus("zai")).toEqual({ configured: false });
+		expect(runtime.getAvailableSnapshot().some((model) => model.provider === "zai")).toBe(false);
+	});
+
+	it("preserves caller cancellation during availability synchronization", async () => {
+		const credentials = AuthStorage.inMemory();
+		const read = credentials.read.bind(credentials);
+		const availabilityRead = deferred();
+		const availabilityStarted = deferred();
+		let blockReads = false;
+		let reads = 0;
+		vi.spyOn(credentials, "read").mockImplementation(async (providerId, options) => {
+			if (blockReads && providerId === "zai" && ++reads === 2) {
+				availabilityStarted.resolve();
+				await availabilityRead.promise;
+			}
+			return read(providerId, options);
+		});
+		const runtime = await ModelRuntime.create({ credentials, modelsPath: null, refreshOnCreate: false });
+		runtime.registerProvider("zai", { apiKey: "!printf test-key" });
+		await runtime.refresh({ providers: ["zai"], allowNetwork: false });
+		const controller = new AbortController();
+		blockReads = true;
+		const lookup = runtime.getAuth("zai", { signal: controller.signal });
+		try {
+			await availabilityStarted.promise;
+			controller.abort();
+			availabilityRead.resolve();
+			await expect(lookup).rejects.toMatchObject({ name: "AbortError" });
+		} finally {
+			availabilityRead.resolve();
+		}
+		expect(runtime.hasConfiguredAuth("zai")).toBe(true);
+		expect(runtime.getProviderAuthStatus("zai").configured).toBe(true);
+		expect(runtime.getAvailableSnapshot().some((model) => model.provider === "zai")).toBe(true);
 	});
 
 	it("invalidates observed emptiness when the command changes or is removed", async () => {
@@ -90,7 +283,7 @@ describe("empty API key pools", () => {
 		expect(await runtime.checkAuth("zai")).toBeDefined();
 	});
 
-	it("lets a stored credential override observed empty command output", async () => {
+	it("lets stored and runtime credentials override observed empty command output", async () => {
 		const credentials = AuthStorage.inMemory();
 		const runtime = await ModelRuntime.create({ credentials, modelsPath: null, refreshOnCreate: false });
 		runtime.registerProvider("zai", { apiKey: "!printf ''" });
