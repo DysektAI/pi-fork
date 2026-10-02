@@ -498,6 +498,31 @@ describe("MCP OAuth", () => {
 		expect(await exchange("omitted", undefined, false)).toBe("AUTHORIZED");
 		expect(codes).toEqual(["matching", "omitted"]);
 	});
+
+	it("validates a supplied issuer before exchanging a code without server metadata", async () => {
+		const codes: string[] = [];
+		const origin = await listen(async (request, response) => {
+			if (request.method !== "POST") {
+				response.writeHead(404).end();
+				return;
+			}
+			codes.push(new URLSearchParams(await readBody(request)).get("code") ?? "");
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify({ access_token: "token", token_type: "Bearer" }));
+		});
+		const exchange = (code: string, iss?: string) => {
+			const provider = new TestOAuthProvider("http://127.0.0.1/callback");
+			provider.client = { client_id: "client" };
+			provider.verifier = "verifier";
+			provider.discovery = { authorizationServerUrl: origin };
+			return authorizeMcp(provider, { serverUrl: `${origin}/mcp`, authorizationCode: code, iss });
+		};
+		await expect(exchange("other", "https://attacker.example")).rejects.toBeInstanceOf(OAuthIssuerMismatchError);
+		expect(codes).toEqual([]);
+		expect(await exchange("matching", origin)).toBe("AUTHORIZED");
+		expect(await exchange("omitted")).toBe("AUTHORIZED");
+		expect(codes).toEqual(["matching", "omitted"]);
+	});
 });
 
 describe("OAuthCallbackServer pages", () => {

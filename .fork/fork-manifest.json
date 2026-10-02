@@ -179,6 +179,19 @@
         "pattern": "Google Cloud metadata credentials",
         "note": "REDUNDANT if upstream supports Vertex metadata-server credentials; re-check external-editor.ts and compaction.ts separately."
       }
+    },
+    {
+      "branch": "fix/mcp-oauth-credentials",
+      "summary": "Validate supplied authorization-response issuers without server metadata, and remove both named and legacy OAuth credentials on sign-out.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/mcp/src/oauth/flow.ts",
+        "pattern": "expectedIssuer",
+        "note": "Re-check both issuer validation and McpOAuthCredentialStore.remove before dropping these credential fixes."
+      }
     }
   ]
 }

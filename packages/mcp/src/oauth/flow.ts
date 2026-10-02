@@ -339,8 +339,9 @@ async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions)
 	if (options.authorizationCode) {
 		// RFC 9207: never send a code from another authorization server to this one.
 		const iss = options.iss;
-		if (metadata && (iss !== undefined || metadata.authorization_response_iss_parameter_supported)) {
-			if (iss !== metadata.issuer) throw new OAuthIssuerMismatchError(metadata.issuer, iss);
+		if (iss !== undefined || metadata?.authorization_response_iss_parameter_supported) {
+			const expectedIssuer = metadata?.issuer ?? String(discovered.authorizationServerUrl);
+			if (iss !== expectedIssuer) throw new OAuthIssuerMismatchError(expectedIssuer, iss);
 		}
 		const tokens = await exchangeAuthorizationCode(discovered.authorizationServerUrl, {
 			...tokenOptions,

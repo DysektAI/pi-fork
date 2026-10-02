@@ -52,4 +52,25 @@ describe("MCP OAuth credential store", () => {
 		expect(storedKeys(backend)).toEqual([]);
 		expect(store.remove("work", SERVER_URL)).toBe(false);
 	});
+
+	it("removes named and legacy credentials without signing out another server at the same URL", async () => {
+		const backend = new InMemoryAuthStorageBackend();
+		backend.withLock(() => ({
+			result: undefined,
+			next: JSON.stringify({
+				[SERVER_URL]: state("legacy-token"),
+				[`mcp__work|${SERVER_URL}`]: state("work-token"),
+				[`mcp__personal|${SERVER_URL}`]: state("personal-token"),
+			}),
+		}));
+		const store = new McpOAuthCredentialStore(backend);
+
+		expect(store.remove("work", SERVER_URL)).toBe(true);
+		expect(await store.forServer("work", SERVER_URL).load()).toBeUndefined();
+		expect(store.tokens("work", SERVER_URL)).toBeUndefined();
+		expect(await store.forServer("personal", SERVER_URL).load()).toEqual(state("personal-token"));
+		expect(store.tokens("personal", SERVER_URL)).toEqual(state("personal-token").tokens);
+		expect(storedKeys(backend)).toEqual([`mcp__personal|${SERVER_URL}`]);
+		expect(store.remove("work", SERVER_URL)).toBe(false);
+	});
 });

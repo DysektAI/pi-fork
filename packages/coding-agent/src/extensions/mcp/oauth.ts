@@ -197,9 +197,9 @@ export class McpOAuthCredentialStore {
 		const { key, legacyKey } = storeKeys(name, serverUrl);
 		return this.backend.withLock((current) => {
 			const states = parseStates(current);
-			const stored = key in states ? key : legacyKey in states ? legacyKey : undefined;
-			if (!stored) return { result: false };
-			delete states[stored];
+			if (!(key in states) && !(legacyKey in states)) return { result: false };
+			delete states[key];
+			delete states[legacyKey];
 			return { result: true, next: serializeStates(states) };
 		});
 	}
