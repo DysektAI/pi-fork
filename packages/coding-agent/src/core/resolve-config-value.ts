@@ -176,7 +176,7 @@ function executeWithConfiguredShell(command: string): { executed: boolean; value
 		}
 
 		const value = (result.stdout ?? "").trim();
-		return { executed: true, value: value || undefined };
+		return { executed: true, value };
 	} catch {
 		return { executed: false, value: undefined };
 	}
@@ -189,7 +189,7 @@ function executeWithDefaultShell(command: string): string | undefined {
 			timeout: 10000,
 			stdio: ["ignore", "pipe", "ignore"],
 		});
-		return output.trim() || undefined;
+		return output.trim();
 	} catch {
 		return undefined;
 	}
@@ -210,7 +210,7 @@ function executeCommand(commandConfig: string): string | undefined {
 		return commandResultCache.get(commandConfig);
 	}
 
-	const result = executeCommandUncached(commandConfig);
+	const result = executeCommandUncached(commandConfig) || undefined;
 	commandResultCache.set(commandConfig, result);
 	return result;
 }
@@ -221,9 +221,23 @@ function executeCommand(commandConfig: string): string | undefined {
 export function resolveConfigValueUncached(config: string, env?: Record<string, string>): string | undefined {
 	const reference = parseConfigValueReference(config);
 	if (reference.type === "command") {
-		return executeCommandUncached(reference.config);
+		return executeCommandUncached(reference.config) || undefined;
 	}
 	return resolveTemplate(reference.parts, env);
+}
+
+/** A successful command with empty stdout reports that no API key is currently available. */
+export function resolveApiKeyConfigValue(
+	config: string,
+	description: string,
+	env?: Record<string, string>,
+): string | undefined {
+	if (!isCommandConfigValue(config)) return resolveConfigValueOrThrow(config, description, env);
+	const value = executeCommandUncached(config);
+	if (value === undefined) {
+		throw new Error(`Failed to resolve ${description} from shell command: ${config.slice(1)}`);
+	}
+	return value || undefined;
 }
 
 export function resolveConfigValueOrThrow(config: string, description: string, env?: Record<string, string>): string {

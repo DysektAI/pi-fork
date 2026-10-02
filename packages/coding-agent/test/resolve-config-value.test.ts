@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	clearConfigValueCache,
+	resolveApiKeyConfigValue,
 	resolveConfigValue,
+	resolveConfigValueOrThrow,
 	resolveConfigValueUncached,
 } from "../src/core/resolve-config-value.ts";
 import * as shellModule from "../src/utils/shell.ts";
@@ -37,6 +39,13 @@ describe("resolveConfigValue", () => {
 			delete process.env.TEST_CONFIG_LEFT;
 			delete process.env.TEST_CONFIG_RIGHT;
 		}
+	});
+
+	test("treats a successful empty API key command as unavailable without weakening required values", () => {
+		expect(resolveApiKeyConfigValue("!printf ''", "API key")).toBeUndefined();
+		expect(resolveApiKeyConfigValue("!echo key", "API key")).toBe("key");
+		expect(() => resolveApiKeyConfigValue("!exit 1", "API key")).toThrow("Failed to resolve API key");
+		expect(() => resolveConfigValueOrThrow("!printf ''", "header")).toThrow("Failed to resolve header");
 	});
 
 	test("uses credential-scoped environment before process.env", () => {
