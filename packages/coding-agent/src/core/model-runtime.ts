@@ -70,6 +70,7 @@ import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";
 import { ModelConfig } from "./model-config.ts";
 import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.ts";
 import {
+	type ApiKeyCommandAvailability,
 	type AuthStatus,
 	type CompatibilityRequestConfig,
 	composeModelProvider,
@@ -80,6 +81,7 @@ import {
 	validateExtensionProvider,
 } from "./provider-composer.ts";
 import { withRemoteCatalog } from "./remote-catalog-provider.ts";
+import { isCommandConfigValue } from "./resolve-config-value.ts";
 import { RuntimeCredentials } from "./runtime-credentials.ts";
 import {
 	createVirtualModel,
@@ -178,6 +180,10 @@ export class ModelRuntime implements Models {
 	/** Virtual models by provider id, then model id. */
 	private readonly virtualModels = new Map<string, Map<string, RegisteredVirtualModel>>();
 	private readonly compositionErrors = new Map<string, string>();
+	private readonly commandApiKeyAvailability = new Map<
+		string,
+		{ command: string; state: ApiKeyCommandAvailability }
+	>();
 	private readonly modelsPath: string | undefined;
 	private readonly modelNetworkEnabled: boolean;
 	private config: ModelConfig;
@@ -300,13 +306,24 @@ export class ModelRuntime implements Models {
 	private composeProvider(providerId: string): Provider | undefined {
 		const base = this.nativeExtensionProviders.get(providerId) ?? this.builtins.get(providerId);
 		const extension = this.extensionProviders.get(providerId);
+		const rawKey = extension?.apiKey ?? this.config.getProvider(providerId)?.apiKey;
+		let commandAvailability = this.commandApiKeyAvailability.get(providerId);
+		if (rawKey !== undefined && isCommandConfigValue(rawKey)) {
+			if (commandAvailability?.command !== rawKey) {
+				commandAvailability = { command: rawKey, state: { revision: 0 } };
+				this.commandApiKeyAvailability.set(providerId, commandAvailability);
+			}
+		} else {
+			this.commandApiKeyAvailability.delete(providerId);
+			commandAvailability = undefined;
+		}
 		if (!this.config.getProvider(providerId) && !extension) {
 			// No overlays: use the builtin untouched so its auth/login/stream behavior is exact.
 			this.compositionErrors.delete(providerId);
 			return base;
 		}
 		try {
-			const provider = composeModelProvider(providerId, base, this.config, extension);
+			const provider = composeModelProvider(providerId, base, this.config, extension, commandAvailability?.state);
 			this.compositionErrors.delete(providerId);
 			return provider;
 		} catch (error) {
@@ -318,7 +335,11 @@ export class ModelRuntime implements Models {
 	private rebuildProviders(): void {
 		this.models.clearProviders();
 		this.compositionErrors.clear();
-		for (const providerId of this.providerIds()) this.recomposeProvider(providerId);
+		const providerIds = this.providerIds();
+		for (const providerId of this.commandApiKeyAvailability.keys()) {
+			if (!providerIds.has(providerId)) this.commandApiKeyAvailability.delete(providerId);
+		}
+		for (const providerId of providerIds) this.recomposeProvider(providerId);
 		this.updateModelSnapshot();
 	}
 
@@ -550,9 +571,33 @@ export class ModelRuntime implements Models {
 		providerOrModel: string | AnyModel,
 		overrides: ModelRuntimeAuthOverrides = {},
 	): Promise<AuthResult | undefined> {
-		if (typeof providerOrModel === "string") return this.models.getAuth(providerOrModel, overrides);
-		const resolution = await this.models.getAuth(providerOrModel, overrides);
-		if (!resolution) return undefined;
+		const providerId = typeof providerOrModel === "string" ? providerOrModel : providerOrModel.provider;
+		const commandAvailability = this.commandApiKeyAvailability.get(providerId);
+		const previousRevision = commandAvailability?.state.revision;
+		const synchronizeAvailability = async () => {
+			if (
+				commandAvailability &&
+				this.commandApiKeyAvailability.get(providerId) === commandAvailability &&
+				commandAvailability.state.revision !== previousRevision
+			) {
+				// The observation is already committed; cancellation must not leave its snapshot stale.
+				await this.refreshProviderAvailability(providerId, operationSignal());
+			}
+		};
+		let resolution: AuthResult | undefined;
+		try {
+			resolution =
+				typeof providerOrModel === "string"
+					? await this.models.getAuth(providerOrModel, overrides)
+					: await this.models.getAuth(providerOrModel, overrides);
+		} catch (error) {
+			// The availability pass records its error; preserve the original auth failure when present.
+			await synchronizeAvailability().catch(() => {});
+			throw error;
+		}
+		await synchronizeAvailability();
+		overrides.signal?.throwIfAborted();
+		if (typeof providerOrModel === "string" || !resolution) return resolution;
 		const configuredHeaders = resolveConfiguredModelHeaders(
 			providerOrModel,
 			this.config.getProvider(providerOrModel.provider),
@@ -638,6 +683,7 @@ export class ModelRuntime implements Models {
 	getProviderAuthStatus(providerId: string): AuthStatus {
 		if (this.credentials.hasRuntimeApiKey(providerId)) return { configured: true, source: "runtime" };
 		if (this.snapshot.storedProviders.has(providerId)) return { configured: true, source: "stored" };
+		if (this.commandApiKeyAvailability.get(providerId)?.state.available === false) return { configured: false };
 		const configured = configuredRequestAuthStatus(
 			this.config.getProvider(providerId),
 			this.extensionProviders.get(providerId),
@@ -903,6 +949,13 @@ export class ModelRuntime implements Models {
 		configuredStatus: AuthStatus | undefined,
 		type: AuthType,
 	): void {
+		if (
+			!this.snapshot.storedProviders.has(providerId) &&
+			!this.credentials.hasRuntimeApiKey(providerId) &&
+			this.commandApiKeyAvailability.get(providerId)?.state.available === false
+		) {
+			return;
+		}
 		if (!this.snapshot.storedProviders.has(providerId) && !configuredStatus?.configured) return;
 		const configuredProviders = new Set(this.snapshot.configuredProviders).add(providerId);
 		const auth = new Map(this.snapshot.auth);

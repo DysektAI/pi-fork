@@ -33,7 +33,7 @@ import {
 	getConfigValueEnvVarNames,
 	isCommandConfigValue,
 	isConfigValueConfigured,
-	resolveConfigValueOrThrow,
+	resolveApiKeyConfigValue,
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.ts";
 
@@ -113,6 +113,12 @@ export type AuthStatus = {
 };
 
 export const clearApiKeyCache = clearConfigValueCache;
+
+/** Last successful command result; availability checks never execute credential commands. */
+export interface ApiKeyCommandAvailability {
+	available?: boolean;
+	revision: number;
+}
 
 function getAllProviderModels(provider: Provider | undefined): readonly AnyModel[] {
 	return provider ? (provider.getAllModels?.() ?? provider.getModels()) : [];
@@ -400,6 +406,7 @@ function composeApiKeyAuth(
 	base: Provider | undefined,
 	config: ModelsJsonProvider | undefined,
 	extension: ProviderConfigInput | undefined,
+	commandAvailability: ApiKeyCommandAvailability,
 ): ApiKeyAuth | undefined {
 	const inherited = base?.auth.apiKey;
 	const rawKey = configuredApiKey(config, extension);
@@ -424,7 +431,11 @@ function composeApiKeyAuth(
 				return resolved ? { type: "api_key", source: resolved.source } : undefined;
 			}
 			if (rawKey !== undefined) {
-				if (isCommandConfigValue(rawKey)) return { type: "api_key", source: "configured API key" };
+				if (isCommandConfigValue(rawKey)) {
+					return commandAvailability.available === false
+						? undefined
+						: { type: "api_key", source: "configured API key" };
+				}
 				const envNames = getConfigValueEnvVarNames(rawKey);
 				for (const name of envNames) {
 					if ((await input.ctx.env(name)) === undefined) return undefined;
@@ -445,7 +456,18 @@ function composeApiKeyAuth(
 						: undefined;
 			} else if (rawKey !== undefined) {
 				const env = await configContextEnv([rawKey], input.ctx);
-				const key = resolveConfigValueOrThrow(rawKey, `API key for provider "${providerId}"`, env);
+				input.signal.throwIfAborted();
+				const key = resolveApiKeyConfigValue(rawKey, `API key for provider "${providerId}"`, env);
+				if (isCommandConfigValue(rawKey)) {
+					commandAvailability.available = key !== undefined;
+					// Count unchanged results too so direct lookups retry failed availability synchronization.
+					commandAvailability.revision++;
+				}
+				if (key === undefined) {
+					const headerEnv = await configContextEnv(Object.values(rawHeaders ?? {}), input.ctx);
+					resolveHeadersOrThrow(rawHeaders, `provider "${providerId}"`, headerEnv);
+					return undefined;
+				}
 				result = inherited
 					? await inherited.resolve({ ...input, credential: { type: "api_key", key } })
 					: { auth: { apiKey: key }, source: "configured API key" };
@@ -525,6 +547,7 @@ export function composeModelProvider(
 	base: Provider | undefined,
 	modelConfig: ModelConfig,
 	extension: ProviderConfigInput | undefined,
+	commandAvailability: ApiKeyCommandAvailability = { revision: 0 },
 ): Provider {
 	const config = modelConfig.getProvider(providerId);
 	let extensionOAuthCredential: OAuthCredentials | undefined;
@@ -556,7 +579,7 @@ export function composeModelProvider(
 	};
 	// Validate eagerly so registration/reload reports structural errors immediately.
 	getAllModels();
-	const apiKey = composeApiKeyAuth(providerId, base, config, extension);
+	const apiKey = composeApiKeyAuth(providerId, base, config, extension, commandAvailability);
 	const oauth = composeOAuthAuth(providerId, base, config, extension);
 	if (!apiKey && !oauth) throw new Error(`Provider ${providerId}: no authentication method configured.`);
 
