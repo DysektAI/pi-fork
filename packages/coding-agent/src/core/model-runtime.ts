@@ -70,6 +70,7 @@ import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";
 import { ModelConfig } from "./model-config.ts";
 import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.ts";
 import {
+	type ApiKeyCommandAvailability,
 	type AuthStatus,
 	type CompatibilityRequestConfig,
 	composeModelProvider,
@@ -80,6 +81,7 @@ import {
 	validateExtensionProvider,
 } from "./provider-composer.ts";
 import { withRemoteCatalog } from "./remote-catalog-provider.ts";
+import { isCommandConfigValue } from "./resolve-config-value.ts";
 import { RuntimeCredentials } from "./runtime-credentials.ts";
 import {
 	createVirtualModel,
@@ -178,6 +180,10 @@ export class ModelRuntime implements Models {
 	/** Virtual models by provider id, then model id. */
 	private readonly virtualModels = new Map<string, Map<string, RegisteredVirtualModel>>();
 	private readonly compositionErrors = new Map<string, string>();
+	private readonly commandApiKeyAvailability = new Map<
+		string,
+		{ command: string; state: ApiKeyCommandAvailability }
+	>();
 	private readonly modelsPath: string | undefined;
 	private readonly modelNetworkEnabled: boolean;
 	private config: ModelConfig;
@@ -300,13 +306,24 @@ export class ModelRuntime implements Models {
 	private composeProvider(providerId: string): Provider | undefined {
 		const base = this.nativeExtensionProviders.get(providerId) ?? this.builtins.get(providerId);
 		const extension = this.extensionProviders.get(providerId);
+		const rawKey = extension?.apiKey ?? this.config.getProvider(providerId)?.apiKey;
+		let commandAvailability = this.commandApiKeyAvailability.get(providerId);
+		if (rawKey !== undefined && isCommandConfigValue(rawKey)) {
+			if (commandAvailability?.command !== rawKey) {
+				commandAvailability = { command: rawKey, state: {} };
+				this.commandApiKeyAvailability.set(providerId, commandAvailability);
+			}
+		} else {
+			this.commandApiKeyAvailability.delete(providerId);
+			commandAvailability = undefined;
+		}
 		if (!this.config.getProvider(providerId) && !extension) {
 			// No overlays: use the builtin untouched so its auth/login/stream behavior is exact.
 			this.compositionErrors.delete(providerId);
 			return base;
 		}
 		try {
-			const provider = composeModelProvider(providerId, base, this.config, extension);
+			const provider = composeModelProvider(providerId, base, this.config, extension, commandAvailability?.state);
 			this.compositionErrors.delete(providerId);
 			return provider;
 		} catch (error) {
@@ -318,7 +335,11 @@ export class ModelRuntime implements Models {
 	private rebuildProviders(): void {
 		this.models.clearProviders();
 		this.compositionErrors.clear();
-		for (const providerId of this.providerIds()) this.recomposeProvider(providerId);
+		const providerIds = this.providerIds();
+		for (const providerId of this.commandApiKeyAvailability.keys()) {
+			if (!providerIds.has(providerId)) this.commandApiKeyAvailability.delete(providerId);
+		}
+		for (const providerId of providerIds) this.recomposeProvider(providerId);
 		this.updateModelSnapshot();
 	}
 

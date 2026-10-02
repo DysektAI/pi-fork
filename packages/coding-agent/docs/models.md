@@ -63,7 +63,7 @@ Use [`models.json`](configuration.md#agent-directory) when an endpoint speaks an
 
 The dummy key makes the model available to Pi; Ollama ignores it. For an authenticated endpoint, `apiKey` and header values can use `$NAME` or `${NAME}` environment interpolation, a literal value, or a leading `!command`. Commands in `models.json` run at request time and are not cached by Pi.
 
-An API-key command can exit successfully with empty stdout when its key pool has no usable credentials. Pi skips that provider's network catalog refresh and retains its existing model catalog. A nonzero command exit remains an error. Header commands still require a value.
+An API-key command can exit successfully with empty stdout when its key pool has no usable credentials. Pi skips that provider's network catalog refresh and retains its existing model catalog. Once Pi observes an empty pool, its models are unavailable until a later key lookup succeeds. Availability checks reuse that observation without executing the command; changing or removing the command clears it. A nonzero command exit remains an error. Header commands still require a value, including when the key pool is empty.
 
 Opening `/model` reloads the file. A `models` entry adds or replaces a model with the same ID on that provider. Use `modelOverrides` to change metadata for an existing built-in or extension-provided model without replacing the provider's model list. Unknown override IDs are ignored.
 
