@@ -14,7 +14,9 @@ async function repository(t, files) {
 	}
 	env.GIT_CONFIG_NOSYSTEM = "1";
 	env.GIT_CONFIG_GLOBAL = join(root, "git-config");
-	env.HOOK_REAL_PATH = env.PATH;
+	const realGit = spawnSync("sh", ["-c", "command -v git"], { env, encoding: "utf8" });
+	assert.equal(realGit.status, 0, realGit.error?.message ?? realGit.stderr);
+	env.HOOK_REAL_GIT = realGit.stdout.trimEnd();
 	env.PATH = `${join(root, "bin")}${delimiter}${env.PATH}`;
 	env.HOOK_COMMAND_LOG = join(root, "commands.log");
 	await writeFile(env.GIT_CONFIG_GLOBAL, "");
@@ -157,7 +159,7 @@ for arg do
     exit 17
   fi
 done
-PATH="$HOOK_REAL_PATH" exec git "$@"
+exec "$HOOK_REAL_GIT" "$@"
 `, { mode: 0o755 });
 	const result = repo.commit();
 	assert.notEqual(result.status, 0);
