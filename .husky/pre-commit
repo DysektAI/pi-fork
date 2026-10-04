@@ -29,13 +29,17 @@ if [ -n "$BROWSER_SMOKE_FILES" ]; then
   fi
 fi
 
-# Restage files that were previously staged and may have been modified by formatting
-xargs -0 sh -e -c '
+# Restage files that were previously staged and may have been modified by formatting.
+# Check the status explicitly so a failed git add aborts even without the caller's sh -e.
+if ! xargs -0 sh -e -c '
 for file do
   if [ -f "$file" ]; then
     git --literal-pathspecs add -- "$file"
   fi
 done
-' sh < "$STAGED_FILES"
+' sh < "$STAGED_FILES"; then
+  echo "❌ Failed to restage formatted files."
+  exit 1
+fi
 
 echo "✅ All pre-commit checks passed!"

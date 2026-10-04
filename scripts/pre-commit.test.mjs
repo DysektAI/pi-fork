@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
 
-async function repository(t, files) {
+async function repository(t, files, { hookShell = "sh -e" } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "pi-pre-commit-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const env = { ...process.env };
@@ -47,8 +47,8 @@ async function repository(t, files) {
 	await mkdir(join(root, "bin"));
 	await copyFile(new URL("../.husky/pre-commit", import.meta.url), join(root, ".husky/pre-commit"));
 	await copyFile(new URL("./check-lockfile-commit.mjs", import.meta.url), join(root, "scripts/check-lockfile-commit.mjs"));
-	// Husky invokes the hook through sh -e; run the actual hook with the same error handling.
-	await writeFile(join(root, ".git/hooks/pre-commit"), '#!/bin/sh\nPATH="$PWD/bin:$PATH"\nexport PATH\nexec sh -e .husky/pre-commit\n', { mode: 0o755 });
+	// Husky invokes the hook through sh -e; run the actual hook with the same error handling by default.
+	await writeFile(join(root, ".git/hooks/pre-commit"), `#!/bin/sh\nPATH="$PWD/bin:$PATH"\nexport PATH\nexec ${hookShell} .husky/pre-commit\n`, { mode: 0o755 });
 	await writeFile(join(root, "bin/npm"), `#!/bin/sh
 printf '%s\\n' "$*" >> "$HOOK_COMMAND_LOG"
 case "$*" in
@@ -148,11 +148,13 @@ for (const [label, path, failure, expectedCommands] of [
 	});
 }
 
-test("does not suppress git add failures", async (t) => {
-	const repo = await repository(t, { "source.txt": "original\n" });
-	await repo.write("source.txt", "staged\n");
-	repo.git("add", "--", "source.txt");
-	await writeFile(join(repo.root, "bin/git"), `#!/bin/sh
+// The hook must not rely on the caller's errexit: manual `sh .husky/pre-commit` runs abort too.
+for (const hookShell of ["sh -e", "sh"]) {
+	test(`does not suppress git add failures (${hookShell})`, async (t) => {
+		const repo = await repository(t, { "source.txt": "original\n" }, { hookShell });
+		await repo.write("source.txt", "staged\n");
+		repo.git("add", "--", "source.txt");
+		await writeFile(join(repo.root, "bin/git"), `#!/bin/sh
 for arg do
   if [ "$arg" = add ]; then
     echo 'injected git add failure' >&2
@@ -161,12 +163,13 @@ for arg do
 done
 exec "$HOOK_REAL_GIT" "$@"
 `, { mode: 0o755 });
-	const result = repo.commit();
-	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /injected git add failure/);
-	assert.doesNotMatch(result.stdout + result.stderr, /All pre-commit checks passed!/);
-	assert.equal(repo.git("show", "HEAD:source.txt"), "original\n");
-});
+		const result = repo.commit();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /injected git add failure/);
+		assert.doesNotMatch(result.stdout + result.stderr, /All pre-commit checks passed!/);
+		assert.equal(repo.git("show", "HEAD:source.txt"), "original\n");
+	});
+}
 
 test("keeps the lockfile guard ahead of formatting and restaging", async (t) => {
 	const repo = await repository(t, { "package-lock.json": "{}\n" });
