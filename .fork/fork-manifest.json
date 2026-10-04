@@ -16,6 +16,19 @@
   ],
   "features": [
     {
+      "branch": "fix/pre-commit-staged-deletions",
+      "summary": "Pre-commit restaging preserves deliberate staged deletions and literal filenames, including whitespace, without staging unrelated formatter changes.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": ".husky/pre-commit",
+        "pattern": "--diff-filter=d",
+        "note": "Re-check deletion handling and NUL-delimited literal restaging if upstream excludes staged deletions."
+      }
+    },
+    {
       "branch": "feat/fork-tooling",
       "summary": "Fork maintenance tooling: CHANGELOG merge driver, rerere setup, sync scripts, the tracked consumer job (.fork/local-sync.sh + .fork/systemd units), docs.",
       "base": "main",
