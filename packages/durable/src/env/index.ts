@@ -216,6 +216,8 @@ export interface FileSystem {
 		context: Context,
 	): Promise<Result<FileWatcher, FileError>>;
 	canonicalPath(path: string, context: Context): Promise<Result<string, FileError>>;
+	/** Resolve a symbolic link's immediate target to an absolute path without requiring the target to exist. */
+	readLink?(path: string, context: Context): Promise<Result<string, FileError>>;
 	exists(path: string, context: Context): Promise<Result<boolean, FileError>>;
 	createDir(
 		path: string,

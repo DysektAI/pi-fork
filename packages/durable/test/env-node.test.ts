@@ -241,6 +241,19 @@ describe("NodeExecutionEnv filesystem", () => {
 		]);
 	});
 
+	// DysektAI/pi-fork#17: canonicalPath cannot resolve the target of a dangling link.
+	it.each(["relative", "absolute"])("reads a dangling %s symlink's absolute target", async (kind) => {
+		const root = createTempDir();
+		const env = new NodeExecutionEnv({ cwd: root });
+		const target = join(root, "missing.txt");
+		await symlink(kind === "absolute" ? target : "missing.txt", join(root, "link.txt"));
+		expect(getOrThrow(await env.readLink("link.txt", BACKGROUND_CONTEXT))).toBe(target);
+		expect(await env.canonicalPath("link.txt", BACKGROUND_CONTEXT)).toMatchObject({
+			ok: false,
+			error: { code: "not_found" },
+		});
+	});
+
 	it("stops reading text lines at the requested limit", async () => {
 		const root = createTempDir();
 		const env = new NodeExecutionEnv({ cwd: root });
@@ -363,6 +376,7 @@ describe("NodeExecutionEnv filesystem", () => {
 			env.fileInfo("file.txt", context),
 			env.listDir(".", context),
 			env.canonicalPath("file.txt", context),
+			env.readLink("file.txt", context),
 			env.exists("file.txt", context),
 			env.createDir("dir", undefined, context),
 			env.remove("file.txt", undefined, context),

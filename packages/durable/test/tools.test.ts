@@ -480,6 +480,55 @@ describe("durable tools", () => {
 			expect(getOrThrow(await env.readTextFile("real/new.txt", BACKGROUND_CONTEXT))).toBe("second\n");
 		});
 
+		// DysektAI/pi-fork#17: a dangling symlink still names its future target.
+		it.each(["relative", "absolute", "chain", "missing-parent", "aliased-parent"])(
+			"serializes writes through dangling %s aliases",
+			async (kind) => {
+				const env = new BlockingWriteExecutionEnv({ cwd: createTempDir() });
+				const targetPath =
+					kind === "missing-parent"
+						? "missing/target.txt"
+						: kind === "aliased-parent"
+							? "real/target.txt"
+							: "target.txt";
+				await symlink("target.txt", `${env.cwd}/chain.txt`);
+				let aliasPath = "link.txt";
+				if (kind === "aliased-parent") {
+					getOrThrow(await env.createDir("real/sub", undefined, BACKGROUND_CONTEXT));
+					await symlink(`${env.cwd}/real/sub`, `${env.cwd}/aliased-directory`);
+					await symlink("../target.txt", `${env.cwd}/real/sub/link.txt`);
+					aliasPath = "aliased-directory/link.txt";
+				} else {
+					const target =
+						kind === "absolute" ? `${env.cwd}/${targetPath}` : kind === "chain" ? "chain.txt" : targetPath;
+					await symlink(target, `${env.cwd}/link.txt`);
+				}
+				const tool = createWriteTool();
+				const first = run(tool, { path: aliasPath, content: "first\n" }, env);
+				await env.firstWriteStarted.promise;
+				const second = run(tool, { path: targetPath, content: "second\n" }, env);
+				try {
+					await delay(20);
+					expect(env.secondWriteStarted).toBe(false);
+				} finally {
+					if (kind === "missing-parent") getOrThrow(await env.createDir("missing", undefined, BACKGROUND_CONTEXT));
+					env.finishFirstWrite.resolve();
+					await Promise.all([first, second]);
+				}
+				expect(getOrThrow(await env.readTextFile(targetPath, BACKGROUND_CONTEXT))).toBe("second\n");
+			},
+		);
+
+		// DysektAI/pi-fork#17: adapters unable to resolve the target must fail instead of taking a different lock.
+		it("refuses dangling-link writes when the environment cannot read symbolic links", async () => {
+			const env: ExecutionEnv = createEnv();
+			await symlink("missing.txt", `${env.cwd}/link.txt`);
+			Object.defineProperty(env, "readLink", { value: undefined });
+			await expect(run(createWriteTool(), { path: "link.txt", content: "hello" }, env)).rejects.toMatchObject({
+				code: "not_supported",
+			});
+		});
+
 		it.skipIf(process.platform === "win32")(
 			"keys a missing file whose name contains a backslash like the created file",
 			async () => {

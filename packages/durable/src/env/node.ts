@@ -12,13 +12,14 @@ import {
 	open as openFile,
 	readdir,
 	readFile,
+	readlink,
 	realpath,
 	rename,
 	rm,
 	writeFile,
 } from "node:fs/promises";
 import { homedir, constants as osConstants, tmpdir } from "node:os";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "@earendil-works/chord";
 import { StreamDecoder } from "./decode.ts";
@@ -1148,6 +1149,17 @@ export class NodeExecutionEnv implements ExecutionEnv {
 		if (aborted) return aborted;
 		try {
 			return ok(await realpath(resolved));
+		} catch (error) {
+			return err(toFileError(error, resolved));
+		}
+	}
+
+	async readLink(path: string, context: Context): Promise<Result<string, FileError>> {
+		const resolved = resolvePath(this.cwd, path);
+		const aborted = abortResult<string>(context.abortSignal, resolved);
+		if (aborted) return aborted;
+		try {
+			return ok(resolve(await realpath(dirname(resolved)), await readlink(resolved)));
 		} catch (error) {
 			return err(toFileError(error, resolved));
 		}

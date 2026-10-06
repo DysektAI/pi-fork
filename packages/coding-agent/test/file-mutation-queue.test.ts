@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,6 +35,52 @@ afterEach(async () => {
 });
 
 describe("withFileMutationQueue", () => {
+	// DysektAI/pi-fork#17: the legacy tools must not bypass the durable queue fix.
+	it.each(["relative", "absolute", "chain", "directory", "aliased-parent"])(
+		"serializes a dangling %s alias with its not-yet-created target",
+		async (kind) => {
+			const dir = await createTempDir();
+			const target = kind === "aliased-parent" ? join(dir, "real", "target.txt") : join(dir, "target.txt");
+			const alias =
+				kind === "directory"
+					? join(dir, "linked-directory", "target.txt")
+					: kind === "aliased-parent"
+						? join(dir, "linked-directory", "link.txt")
+						: join(dir, "alias.txt");
+			if (kind === "aliased-parent") {
+				await mkdir(join(dir, "real", "sub"), { recursive: true });
+				await symlink(join(dir, "real", "sub"), join(dir, "linked-directory"));
+				await symlink("../target.txt", join(dir, "real", "sub", "link.txt"));
+			} else if (kind === "directory") {
+				await symlink(dir, join(dir, "linked-directory"), process.platform === "win32" ? "junction" : "dir");
+			} else {
+				await symlink("target.txt", join(dir, "chain.txt"));
+				await symlink(kind === "absolute" ? target : kind === "chain" ? "chain.txt" : "target.txt", alias);
+			}
+			const entered = createDeferred();
+			const release = createDeferred();
+			let secondEntered = false;
+			const first = withFileMutationQueue(alias, async () => {
+				entered.resolve();
+				await release.promise;
+				await writeFile(alias, "first");
+			});
+			await entered.promise;
+			const second = withFileMutationQueue(target, async () => {
+				secondEntered = true;
+				await writeFile(target, "second");
+			});
+			try {
+				await delay(20);
+				expect(secondEntered).toBe(false);
+			} finally {
+				release.resolve();
+				await Promise.all([first, second]);
+			}
+			expect(await readFile(target, "utf8")).toBe("second");
+		},
+	);
+
 	it("serializes operations for the same file", async () => {
 		const order: string[] = [];
 		const path = "/tmp/file-mutation-queue-same";

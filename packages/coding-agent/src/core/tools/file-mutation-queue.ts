@@ -1,5 +1,5 @@
-import { realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readlink, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 
 const fileMutationQueues = new Map<string, Promise<void>>();
 let registrationQueue = Promise.resolve();
@@ -13,16 +13,31 @@ function isMissingPathError(error: unknown): boolean {
 	);
 }
 
-async function getMutationQueueKey(filePath: string): Promise<string> {
+async function getMutationQueueKey(filePath: string, links = 0): Promise<string> {
 	const resolvedPath = resolve(filePath);
 	try {
 		return await realpath(resolvedPath);
 	} catch (error) {
-		if (isMissingPathError(error)) {
-			return resolvedPath;
-		}
-		throw error;
+		if (!isMissingPathError(error)) throw error;
 	}
+	const parent = dirname(resolvedPath);
+	if (parent === resolvedPath) return resolvedPath;
+	let target: string | undefined;
+	try {
+		target = await readlink(resolvedPath);
+	} catch (error) {
+		if (
+			!isMissingPathError(error) &&
+			!(typeof error === "object" && error !== null && "code" in error && error.code === "EINVAL")
+		) {
+			throw error;
+		}
+	}
+	if (target !== undefined) {
+		if (links >= 40) throw new Error(`Too many symbolic links: ${filePath}`);
+		return getMutationQueueKey(resolve(await realpath(parent), target), links + 1);
+	}
+	return join(await getMutationQueueKey(parent, links), basename(resolvedPath));
 }
 
 /**
