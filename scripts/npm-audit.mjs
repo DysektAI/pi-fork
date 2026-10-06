@@ -5,6 +5,32 @@
 // about entries that no longer match.
 
 import { spawnSync } from "node:child_process";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, delimiter, dirname, join } from "node:path";
+
+// Invoke npm's JavaScript entry with this Node runtime. Windows npm.cmd is not an executable,
+// and a shell would interpret paths/arguments instead of preserving them.
+let npmCli = process.env.npm_execpath;
+if (!npmCli || basename(npmCli) !== "npm-cli.js" || !existsSync(npmCli)) {
+	npmCli = undefined;
+	for (const directory of [dirname(process.execPath), ...(process.env.PATH ?? "").split(delimiter)]) {
+		if (!directory) continue;
+		const installedCli = join(directory, "node_modules/npm/bin/npm-cli.js");
+		if (existsSync(installedCli)) {
+			npmCli = installedCli;
+			break;
+		}
+		const executable = join(directory, "npm");
+		if (existsSync(executable)) {
+			const target = realpathSync(executable);
+			if (basename(target) === "npm-cli.js") {
+				npmCli = target;
+				break;
+			}
+		}
+	}
+}
+if (!npmCli) throw new Error("Cannot locate npm-cli.js. Install npm for the active Node runtime.");
 
 const auditLevel = "moderate";
 const severities = ["info", "low", "moderate", "high", "critical"];
@@ -20,9 +46,17 @@ const acceptedAdvisories = {
 	},
 };
 
-const result = spawnSync("npm", ["audit", "--omit=dev", "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const result = spawnSync(process.execPath, [npmCli, "audit", "--omit=dev", "--json"], {
+	encoding: "utf8",
+	maxBuffer: 64 * 1024 * 1024,
+});
 if (result.error) {
 	throw result.error;
+}
+if (result.status !== 0 && result.status !== 1) {
+	process.stderr.write(result.stderr ?? "");
+	console.error(`npm audit failed with ${result.signal ?? `exit code ${result.status}`}.`);
+	process.exit(1);
 }
 
 let report;
@@ -35,8 +69,20 @@ try {
 	process.exit(1);
 }
 
-if (report.error) {
+if (report?.error) {
 	console.error(`npm audit failed: ${report.error.summary ?? JSON.stringify(report.error)}`);
+	process.exit(1);
+}
+if (
+	!report ||
+	typeof report.vulnerabilities !== "object" ||
+	report.vulnerabilities === null ||
+	Array.isArray(report.vulnerabilities) ||
+	!Number.isSafeInteger(report.metadata?.vulnerabilities?.total) ||
+	report.metadata.vulnerabilities.total !== Object.keys(report.vulnerabilities).length ||
+	(result.status === 1 && report.metadata.vulnerabilities.total === 0)
+) {
+	console.error("npm audit did not produce a complete vulnerability report.");
 	process.exit(1);
 }
 
