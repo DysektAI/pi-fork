@@ -63,9 +63,7 @@ unexpected_changes() {
 		git diff --name-only
 		# Compare against the completed merge index, not HEAD, so upstream changes
 		# are expected but concurrent staging is never folded into the sync commit.
-		git diff --cached --name-only "$validation_tree" -- . \
-			':(exclude)packages/ai/src/*.generated.ts' \
-			':(exclude)packages/ai/src/providers/*.models.ts'
+		git diff --cached --name-only "$validation_tree" -- . "$@"
 		git ls-files --others --exclude-standard
 	fi
 }
@@ -117,10 +115,15 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 		die "Unexpected staged catalog changes during build"
 	fi
 	git add 'packages/ai/src/*.generated.ts' 'packages/ai/src/providers/*.models.ts' 2>/dev/null || true
-	unexpected="$(unexpected_changes)"
+	unexpected="$(unexpected_changes \
+		':(exclude)packages/ai/src/*.generated.ts' \
+		':(exclude)packages/ai/src/providers/*.models.ts')"
 	if [[ -n "$unexpected" ]]; then
 		die "$(printf 'Unexpected build changes:\n%s' "$unexpected")"
 	fi
+	# Catalog output is now part of the validated index. Subsequent checks must
+	# reject changes to every path, including catalogs, through the commit step.
+	validation_tree="$(git write-tree)"
 
 	say "Running repository checks"
 	if git diff --cached --name-only -- package-lock.json | grep -q .; then
@@ -145,6 +148,11 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 			test/model-resolver.test.ts \
 			test/version-check.test.ts
 	)
+fi
+
+unexpected="$(unexpected_changes)"
+if [[ -n "$unexpected" ]]; then
+	die "$(printf 'Validation changed the checkout:\n%s' "$unexpected")"
 fi
 
 if [[ "$already_current" -eq 0 ]]; then

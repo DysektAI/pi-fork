@@ -41,7 +41,7 @@ async function repository(t, { upstream = false, conflict = false, buildExit = 4
 	await copyFile(new URL("../.fork/retire-legacy-git-config.py", import.meta.url), join(root, ".fork/retire-legacy-git-config.py"));
 	await mkdir(join(root, "scripts"));
 	await copyFile(new URL("./check-lockfile-commit.mjs", import.meta.url), join(root, "scripts/check-lockfile-commit.mjs"));
-	if (mutation === "catalog" || mutation === "generated") {
+	if (["catalog", "generated", "focused-staged", "focused-catalog"].includes(mutation)) {
 		await mkdir(join(root, "packages/ai/src/providers"), { recursive: true });
 		await writeFile(join(root, "packages/ai/src/test.generated.ts"), "seed\n");
 		await writeFile(join(root, "packages/ai/src/providers/test.models.ts"), "seed\n");
@@ -76,12 +76,17 @@ case "$*" in
     ${["mixed", "untracked"].includes(mutation) ? "printf 'concurrent untracked work\\n' > user-note.txt" : ""}
     exit ${buildExit}
     ;;
-  *) exit ${mutation === "generated" ? 0 : 99} ;;
+  *) exit ${["generated", "focused-staged", "focused-catalog"].includes(mutation) ? 0 : 99} ;;
 esac
 `, { mode: 0o755 });
-	if (mutation === "generated") {
+	if (["generated", "focused-staged", "focused-catalog"].includes(mutation)) {
 		await mkdir(join(root, "packages/coding-agent"));
-		await writeFile(join(root, "bin/npx"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+		await writeFile(join(root, "bin/npx"), `#!/bin/sh
+cd ../..
+${mutation === "focused-staged" ? "printf 'concurrent test edit\\n' > staged.txt\ngit add -- staged.txt" : ""}
+${mutation === "focused-catalog" ? "printf 'concurrent test edit\\n' > packages/ai/src/test.generated.ts\ngit add -- packages/ai/src/test.generated.ts" : ""}
+exit 0
+`, { mode: 0o755 });
 	}
 	const head = git("rev-parse", "HEAD");
 	return {
@@ -163,6 +168,19 @@ for (const upstream of [false, true]) {
 		assert.equal(repo.git("show", ":packages/ai/src/test.generated.ts"), "concurrent catalog edit");
 		assert.equal(repo.git("rev-parse", "HEAD"), repo.head);
 		if (upstream) assert.equal(repo.git("rev-parse", "MERGE_HEAD"), repo.git("rev-parse", "main"));
+	});
+}
+
+for (const mutation of ["focused-staged", "focused-catalog"]) {
+	test(`rejects ${mutation} edits made during focused tests before committing`, async (t) => {
+		const repo = await repository(t, { upstream: true, buildExit: 0, mutation });
+		const result = repo.run();
+		assert.equal(result.status, 1, result.error?.message ?? `${result.stdout}\n${result.stderr}`);
+		assert.match(result.stderr, /Validation changed the checkout/);
+		assert.equal(repo.git("rev-parse", "HEAD"), repo.head);
+		assert.equal(repo.git("rev-parse", "MERGE_HEAD"), repo.git("rev-parse", "main"));
+		const path = mutation === "focused-staged" ? "staged.txt" : "packages/ai/src/test.generated.ts";
+		assert.equal(repo.git("show", `:${path}`), "concurrent test edit");
 	});
 }
 
