@@ -603,11 +603,6 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			let isOAuth: boolean;
 			let usageModel = model;
 			let inputTransformations: BetaInputTransformation[] | undefined;
-			// Raw input_tokens total from the latest usage event. Anthropic reports
-			// overlapping buckets (input includes cache read + creation), so the
-			// fresh-only input is re-derived whenever any bucket updates, including
-			// deltas that omit input_tokens (common through proxies).
-			let rawInputTokens: number | undefined;
 
 			if (options?.client) {
 				client = options.client;
@@ -682,13 +677,11 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					usageModel = fallbackCost ? { ...model, id: responseModel, cost: fallbackCost } : model;
 					// Capture initial token usage from message_start event
 					// This ensures we have input token counts even if the stream is aborted early
-					rawInputTokens = event.message.usage.input_tokens || 0;
-					output.usage.input = rawInputTokens;
+					output.usage.input = event.message.usage.input_tokens || 0;
 					output.usage.output = event.message.usage.output_tokens || 0;
 					output.usage.cacheRead = event.message.usage.cache_read_input_tokens || 0;
 					output.usage.cacheWrite = event.message.usage.cache_creation_input_tokens || 0;
 					output.usage.cacheWrite1h = event.message.usage.cache_creation?.ephemeral_1h_input_tokens || 0;
-					normalizeAnthropicInputTokens(output.usage, rawInputTokens);
 					// Anthropic doesn't provide total_tokens, compute from components
 					output.usage.totalTokens =
 						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
@@ -834,7 +827,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					// Preserves input_tokens from message_start when proxies omit it in message_delta.
 					if (event.usage) {
 						if (event.usage.input_tokens != null) {
-							rawInputTokens = event.usage.input_tokens;
+							output.usage.input = event.usage.input_tokens;
 						}
 						if (event.usage.output_tokens != null) {
 							output.usage.output = event.usage.output_tokens;
@@ -851,10 +844,6 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 						).cache_creation;
 						if (cacheCreation?.ephemeral_1h_input_tokens != null) {
 							output.usage.cacheWrite1h = cacheCreation.ephemeral_1h_input_tokens;
-						}
-						// input_tokens overlaps the cache buckets; re-derive fresh input.
-						if (rawInputTokens !== undefined) {
-							normalizeAnthropicInputTokens(output.usage, rawInputTokens);
 						}
 						// Anthropic reports reasoning tokens as a subset of output tokens.
 						const thinkingTokens = event.usage.output_tokens_details?.thinking_tokens;
@@ -910,22 +899,6 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 
 	return stream;
 };
-
-/**
- * Normalize Anthropic usage buckets to pi's disjoint convention.
- *
- * Anthropic's `input_tokens` is the TOTAL prompt size: it already includes the
- * `cache_read_input_tokens` and `cache_creation_input_tokens` portions (the
- * same contract as OpenAI's `input_tokens`; the openai-completions and
- * openai-responses drivers perform this identical subtraction). pi's
- * `usage.input` must hold only fresh (non-cached) tokens: `totalTokens`, cost
- * math (`calculateCost`), and cache-miss detection (`cache-stats.ts`) all sum
- * the buckets. Storing the raw total inflates prompts ~2x and reports a
- * phantom "re-billed" miss on every cached turn.
- */
-function normalizeAnthropicInputTokens(usage: AssistantMessage["usage"], rawInputTokens: number): void {
-	usage.input = Math.max(0, rawInputTokens - usage.cacheRead - usage.cacheWrite);
-}
 
 /**
  * Map ThinkingLevel to Anthropic effort levels for adaptive thinking.
