@@ -53,6 +53,14 @@ test("allows an identified advisory below the configured audit level", async (t)
 	assert.match(result.stdout, /No unaccepted advisories/);
 });
 
+test("allows cyclic package references when they lead to a concrete advisory", async (t) => {
+	const result = await audit(t, report({
+		first: { via: ["second", { name: "first", severity: "low", source: 123 }] },
+		second: { via: ["first"] },
+	}), 1);
+	assert.equal(result.status, 0, result.stderr);
+});
+
 test("preserves the documented package-specific exception", async (t) => {
 	const via = { name: "node-forge", severity: "high", url: "https://github.com/advisories/GHSA-86w9-cpqp-85rv" };
 	const result = await audit(t, report({ "node-forge": { via: [via] }, gondolin: { via: ["node-forge"] } }), 1);
@@ -74,6 +82,10 @@ for (const [name, value, status] of [
 	["missing advisory package name", report({ bad: { via: [{ severity: "low", source: 1 }] } }), 1],
 	["missing advisory identity", report({ bad: { via: [{ severity: "low", name: "bad" }] } }), 1],
 	["invalid advisory identity", report({ bad: { via: [{ severity: "low", name: "bad", url: "invalid", source: "invalid" }] } }), 1],
+	// DysektAI/pi-fork#23: an unrelated valid advisory cannot make an incomplete report pass.
+	["empty vulnerability mixed with a valid advisory", report({ bad: { severity: "high", via: [] }, good: { via: [{ name: "good", severity: "low", source: 123 }] } }), 1],
+	["missing package reference mixed with a valid advisory", report({ bad: { via: ["absent"] }, good: { via: [{ name: "good", severity: "low", source: 123 }] } }), 1],
+	["advisory-free cycle mixed with a valid advisory", report({ bad: { via: ["other"] }, other: { via: ["bad"] }, good: { via: [{ name: "good", severity: "low", source: 123 }] } }), 1],
 ]) {
 	test(`fails closed on ${name}`, async (t) => {
 		const result = await audit(t, value, status);

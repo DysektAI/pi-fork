@@ -93,7 +93,43 @@ if (
 const minimumSeverity = severities.indexOf(auditLevel);
 const seenAccepted = new Set();
 const failures = new Map();
-let concreteAdvisories = 0;
+
+// Every reported package must lead to an advisory, including through cyclic dependency graphs.
+// Otherwise an unrelated valid advisory could hide an incomplete part of the report.
+const dependents = new Map();
+const reachable = new Set();
+let complete = true;
+for (const [name, vulnerability] of Object.entries(report.vulnerabilities)) {
+	if (!vulnerability || !Array.isArray(vulnerability.via) || vulnerability.via.length === 0) {
+		complete = false;
+		break;
+	}
+	for (const via of vulnerability.via) {
+		if (typeof via !== "string") {
+			reachable.add(name);
+			continue;
+		}
+		if (!Object.hasOwn(report.vulnerabilities, via)) {
+			complete = false;
+			break;
+		}
+		const parents = dependents.get(via) ?? [];
+		parents.push(name);
+		dependents.set(via, parents);
+	}
+}
+const pending = [...reachable];
+for (const name of pending) {
+	for (const parent of dependents.get(name) ?? []) {
+		if (reachable.has(parent)) continue;
+		reachable.add(parent);
+		pending.push(parent);
+	}
+}
+if (!complete || reachable.size !== report.metadata.vulnerabilities.total) {
+	console.error("npm audit did not produce a complete vulnerability report.");
+	process.exit(1);
+}
 
 for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
 	for (const via of vulnerability.via) {
@@ -118,7 +154,6 @@ for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
 			console.error("npm audit returned an invalid advisory.");
 			process.exit(1);
 		}
-		concreteAdvisories++;
 		const accepted = acceptedAdvisories[id];
 		if (accepted && accepted.package === via.name) {
 			seenAccepted.add(id);
@@ -128,11 +163,6 @@ for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
 			failures.set(`${id}:${via.name}`, via);
 		}
 	}
-}
-
-if (report.metadata.vulnerabilities.total > 0 && concreteAdvisories === 0) {
-	console.error("npm audit reported vulnerable packages without concrete advisories.");
-	process.exit(1);
 }
 
 for (const id of seenAccepted) {
