@@ -140,6 +140,7 @@ jobs:
           - windows-latest
     permissions:
       actions: read
+      contents: read
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
       SOURCE_REF: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref_name }}
