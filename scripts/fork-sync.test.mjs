@@ -41,6 +41,12 @@ async function repository(t, { upstream = false, conflict = false, buildExit = 4
 	await copyFile(new URL("../.fork/retire-legacy-git-config.py", import.meta.url), join(root, ".fork/retire-legacy-git-config.py"));
 	await mkdir(join(root, "scripts"));
 	await copyFile(new URL("./check-lockfile-commit.mjs", import.meta.url), join(root, "scripts/check-lockfile-commit.mjs"));
+	if (mutation === "catalog" || mutation === "generated") {
+		await mkdir(join(root, "packages/ai/src/providers"), { recursive: true });
+		await writeFile(join(root, "packages/ai/src/test.generated.ts"), "seed\n");
+		await writeFile(join(root, "packages/ai/src/providers/test.models.ts"), "seed\n");
+		git("add", "--", "packages/ai/src/test.generated.ts", "packages/ai/src/providers/test.models.ts");
+	}
 	git("add", "--", ".gitignore", "tracked.txt", "staged.txt", "fork-sync.sh", "scripts/check-lockfile-commit.mjs", ".fork/retire-legacy-git-config.py");
 	git("commit", "--quiet", "-m", "seed");
 	git("branch", "main");
@@ -64,13 +70,19 @@ printf '%s\\n' "$*" >> commands.log
 case "$*" in
   'run build')
     ${mutation === "mixed" ? "printf 'concurrent tracked edit\\n' > tracked.txt" : ""}
-    ${mutation !== "untracked" ? "printf 'concurrent staged edit\\n' > staged.txt\n    git add -- staged.txt" : ""}
-    ${mutation !== "staged" ? "printf 'concurrent untracked work\\n' > user-note.txt" : ""}
+    ${mutation === "catalog" ? "printf 'concurrent catalog edit\\n' > packages/ai/src/test.generated.ts\n    git add -- packages/ai/src/test.generated.ts" : ""}
+    ${mutation === "generated" ? "printf 'generated catalog\\n' > packages/ai/src/test.generated.ts" : ""}
+    ${["mixed", "staged"].includes(mutation) ? "printf 'concurrent staged edit\\n' > staged.txt\n    git add -- staged.txt" : ""}
+    ${["mixed", "untracked"].includes(mutation) ? "printf 'concurrent untracked work\\n' > user-note.txt" : ""}
     exit ${buildExit}
     ;;
-  *) exit 99 ;;
+  *) exit ${mutation === "generated" ? 0 : 99} ;;
 esac
 `, { mode: 0o755 });
+	if (mutation === "generated") {
+		await mkdir(join(root, "packages/coding-agent"));
+		await writeFile(join(root, "bin/npx"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+	}
 	const head = git("rev-parse", "HEAD");
 	return {
 		root,
@@ -140,6 +152,30 @@ for (const mutation of ["staged", "untracked"]) {
 		else assert.equal(await readFile(join(repo.root, "user-note.txt"), "utf8"), "concurrent untracked work\n");
 	});
 }
+
+for (const upstream of [false, true]) {
+	test(`rejects concurrent staged catalog work with upstream ${upstream ? "ahead" : "current"}`, async (t) => {
+		const repo = await repository(t, { upstream, buildExit: 0, mutation: "catalog" });
+		const result = repo.run();
+		assert.equal(result.status, 1, result.error?.message ?? `${result.stdout}\n${result.stderr}`);
+		assert.match(result.stderr, /Unexpected staged catalog changes/);
+		assert.equal(await readFile(join(repo.root, "commands.log"), "utf8"), "run build\n");
+		assert.equal(repo.git("show", ":packages/ai/src/test.generated.ts"), "concurrent catalog edit");
+		assert.equal(repo.git("rev-parse", "HEAD"), repo.head);
+		if (upstream) assert.equal(repo.git("rev-parse", "MERGE_HEAD"), repo.git("rev-parse", "main"));
+	});
+}
+
+test("allows unstaged build-generated catalogs in a validated upstream merge", async (t) => {
+	const repo = await repository(t, { upstream: true, buildExit: 0, mutation: "generated" });
+	const result = repo.run();
+	assert.equal(result.status, 0, result.error?.message ?? `${result.stdout}\n${result.stderr}`);
+	assert.equal(repo.git("show", "HEAD:packages/ai/src/test.generated.ts"), "generated catalog");
+	assert.equal(repo.git("rev-parse", "HEAD^1"), repo.head);
+	assert.equal(repo.git("rev-parse", "HEAD^2"), repo.git("rev-parse", "main"));
+	assert.equal(repo.git("status", "--porcelain"), "");
+	assert.equal(await readFile(join(repo.root, "commands.log"), "utf8"), "run build\nrun check\n");
+});
 
 test("leaves genuine conflicts available for manual resolution", async (t) => {
 	const repo = await repository(t, { conflict: true });

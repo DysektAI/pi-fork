@@ -112,6 +112,10 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 
 	# Stage generated model catalogs rewritten by the build. Everything else was
 	# already staged by the merge; an unstaged file here is an unexpected side effect.
+	if ! git diff --cached --quiet "$validation_tree" -- \
+		'packages/ai/src/*.generated.ts' 'packages/ai/src/providers/*.models.ts'; then
+		die "Unexpected staged catalog changes during build"
+	fi
 	git add 'packages/ai/src/*.generated.ts' 'packages/ai/src/providers/*.models.ts' 2>/dev/null || true
 	unexpected="$(unexpected_changes)"
 	if [[ -n "$unexpected" ]]; then
