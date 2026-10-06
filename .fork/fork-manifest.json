@@ -129,19 +129,6 @@
       }
     },
     {
-      "branch": "fix/anthropic-usage-normalization",
-      "summary": "Anthropic streams re-derive fresh-only input tokens from overlapping input/cache buckets on every usage event, including proxy deltas that omit input_tokens.",
-      "base": "local",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "grep-absent",
-        "ref": "upstream/main",
-        "file": "packages/ai/src/api/anthropic-messages.ts",
-        "pattern": "normalizeAnthropicInputTokens",
-        "note": "REDUNDANT if upstream normalizes Anthropic input vs cache buckets itself."
-      }
-    },
-    {
       "branch": "fix/remote-catalog-native-refresh",
       "summary": "withRemoteCatalog leaves providers that implement refreshModels unwrapped so their own refresh/persistence runs and an empty pi.dev overlay cannot overwrite their cached catalog.",
       "base": "local",
