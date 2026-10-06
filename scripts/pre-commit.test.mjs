@@ -14,10 +14,16 @@ async function repository(t, files, { hookShell = "sh -e" } = {}) {
 	}
 	env.GIT_CONFIG_NOSYSTEM = "1";
 	env.GIT_CONFIG_GLOBAL = join(root, "git-config");
-	const realGit = spawnSync("sh", ["-c", "command -v git"], { env, encoding: "utf8" });
+	// Ask Git for the shell that runs its hooks: Git for Windows does not put `sh` on PATH.
+	// GIT_SHELL_PATH needs Git 2.46+; older Git falls back to `sh` from PATH.
+	const shell = spawnSync("git", ["var", "GIT_SHELL_PATH"], { env, encoding: "utf8" });
+	const shellPath = shell.status === 0 ? shell.stdout.trimEnd() : "sh";
+	const realGit = spawnSync(shellPath, ["-c", "command -v git"], { env, encoding: "utf8" });
 	assert.equal(realGit.status, 0, realGit.error?.message ?? realGit.stderr);
 	env.HOOK_REAL_GIT = realGit.stdout.trimEnd();
-	env.PATH = `${join(root, "bin")}${delimiter}${env.PATH}`;
+	// Windows spells the variable `Path`; a second `PATH` key would make the lookup ambiguous.
+	const pathKey = Object.keys(env).find((name) => name.toUpperCase() === "PATH") ?? "PATH";
+	env[pathKey] = `${join(root, "bin")}${delimiter}${env[pathKey]}`;
 	env.HOOK_COMMAND_LOG = join(root, "commands.log");
 	await writeFile(env.GIT_CONFIG_GLOBAL, "");
 	await writeFile(env.HOOK_COMMAND_LOG, "");
