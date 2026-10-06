@@ -8,6 +8,40 @@ import { createAgentController } from "../src/experimental/services/agent-contro
 import { openFauxConversation, pendingResponse } from "./experimental-durable-support.ts";
 
 describe("AgentController service", () => {
+	// DysektAI/pi-fork#17: reject foreign pending prompts before calling submission.wait().
+	test("rejects another conversation's pending prompt without waiting for its answer", async () => {
+		const pending = pendingResponse();
+		const { harness, conversation, close } = await openFauxConversation([pending.step]);
+		try {
+			const other = await harness.createConversation(
+				{
+					ownership: { kind: "ownerless" },
+					agent: { model: (await conversation.agent(BACKGROUND_CONTEXT)).model },
+				},
+				BACKGROUND_CONTEXT,
+			);
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			try {
+				const submission = await other.submit({ type: "input", content: "private prompt" }, BACKGROUND_CONTEXT);
+				await pending.reached;
+				const deadline = new Promise<never>((_resolve, reject) => {
+					timer = setTimeout(() => reject(new Error("Controller waited for a foreign prompt")), 1000);
+				});
+				await expect(
+					Promise.race([
+						createAgentController(harness, conversation).waitForPrompt(String(submission.id), BACKGROUND_CONTEXT),
+						deadline,
+					]),
+				).rejects.toThrow(`Unknown prompt: ${submission.id}`);
+			} finally {
+				clearTimeout(timer);
+				await other.abort(BACKGROUND_CONTEXT);
+			}
+		} finally {
+			await close();
+		}
+	});
+
 	// DysektAI/pi-fork#17: submission IDs are session-wide, controllers are conversation-scoped.
 	test("rejects another conversation's prompt before waiting or reading its answer", async () => {
 		const { harness, conversation, close } = await openFauxConversation([fauxAssistantMessage("private answer")]);
