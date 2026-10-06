@@ -57,6 +57,9 @@ for (const [name, value, status] of [
 	["invalid JSON", "not JSON", 0],
 	["API error", { error: { summary: "registry unavailable" } }, 1],
 	["failed audit without findings", report(), 1],
+	["failed audit with empty advisory lists", report({ bad: { via: [] } }), 1],
+	["failed audit with only package references", report({ bad: { via: ["other"] } }), 1],
+	["unknown advisory severity", report({ bad: { via: [{ severity: "unknown" }] } }), 1],
 ]) {
 	test(`fails closed on ${name}`, async (t) => {
 		const result = await audit(t, value, status);

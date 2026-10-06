@@ -89,6 +89,7 @@ if (
 const minimumSeverity = severities.indexOf(auditLevel);
 const seenAccepted = new Set();
 const failures = new Map();
+let concreteAdvisories = 0;
 
 for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
 	for (const via of vulnerability.via) {
@@ -96,6 +97,11 @@ for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
 		if (typeof via === "string") {
 			continue;
 		}
+		if (via === null || typeof via !== "object" || !severities.includes(via.severity)) {
+			console.error("npm audit returned an invalid advisory.");
+			process.exit(1);
+		}
+		concreteAdvisories++;
 		const id = via.url?.split("/").pop() ?? String(via.source);
 		const accepted = acceptedAdvisories[id];
 		if (accepted && accepted.package === via.name) {
@@ -106,6 +112,11 @@ for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
 			failures.set(`${id}:${via.name}`, via);
 		}
 	}
+}
+
+if (report.metadata.vulnerabilities.total > 0 && concreteAdvisories === 0) {
+	console.error("npm audit reported vulnerable packages without concrete advisories.");
+	process.exit(1);
 }
 
 for (const id of seenAccepted) {
