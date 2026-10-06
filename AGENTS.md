@@ -1,5 +1,9 @@
 # Development Rules
 
+## Authority
+
+Follow the global agent rules for commit, push, PR, and merge authority. Commit owned changes as needed on a topic branch. High-risk pushes and merges require the authority provided by the global rules and the user's request. This document adds Pi-specific constraints, including the stricter merge gate below.
+
 ## Conversational Style
 
 - Keep answers short and concise
@@ -63,7 +67,6 @@ Fork patches that belong upstream are proposed, not merged locally and forgotten
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - When regressions tests for fixing a github issue, add a comment with the github issue number next to the test.
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
-- Never commit unless the user asks.
 
 ## Dependency and Install Security
 
@@ -150,7 +153,3 @@ Attribution:
 ## Releasing
 
 For release preparation, publishing, verification, or recovery, load and follow [.pi/skills/release.md](.pi/skills/release.md).
-
-## User Override
-
-If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overriding. Only then execute their instructions.
