@@ -12,13 +12,14 @@ import {
 	open as openFile,
 	readdir,
 	readFile,
+	readlink,
 	realpath,
 	rename,
 	rm,
 	writeFile,
 } from "node:fs/promises";
 import { homedir, constants as osConstants, tmpdir } from "node:os";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "@earendil-works/chord";
 import { StreamDecoder } from "./decode.ts";
@@ -83,6 +84,30 @@ function resolvePath(cwd: string, path: string): string {
 		}
 	}
 	return isAbsolute(normalized) ? resolve(normalized) : resolve(cwd, normalized);
+}
+
+/** Canonicalize existing components before joining missing names, preserving symlink/.. traversal. */
+async function canonicalMissingPath(path: string, links = 0): Promise<string> {
+	try {
+		return await realpath(path);
+	} catch (error) {
+		if (!isNodeError(error) || (error.code !== "ENOENT" && error.code !== "ENOTDIR")) throw error;
+	}
+	const parent = dirname(path);
+	if (parent === path) return path;
+	let target: string | undefined;
+	try {
+		target = await readlink(path);
+	} catch (error) {
+		if (!isNodeError(error) || (error.code !== "ENOENT" && error.code !== "ENOTDIR" && error.code !== "EINVAL")) {
+			throw error;
+		}
+	}
+	if (target !== undefined) {
+		if (links >= 40) throw new FileError("invalid", "Too many symbolic links", path);
+		return canonicalMissingPath(isAbsolute(target) ? target : `${await realpath(parent)}${sep}${target}`, links + 1);
+	}
+	return join(await canonicalMissingPath(parent, links), basename(path));
 }
 
 function fileKindFromStats(stats: {
@@ -1148,6 +1173,19 @@ export class NodeExecutionEnv implements ExecutionEnv {
 		if (aborted) return aborted;
 		try {
 			return ok(await realpath(resolved));
+		} catch (error) {
+			return err(toFileError(error, resolved));
+		}
+	}
+
+	async readLink(path: string, context: Context): Promise<Result<string, FileError>> {
+		const resolved = resolvePath(this.cwd, path);
+		const aborted = abortResult<string>(context.abortSignal, resolved);
+		if (aborted) return aborted;
+		try {
+			const target = await readlink(resolved);
+			const absolute = isAbsolute(target) ? target : `${await realpath(dirname(resolved))}${sep}${target}`;
+			return ok(join(await canonicalMissingPath(dirname(absolute)), basename(absolute)));
 		} catch (error) {
 			return err(toFileError(error, resolved));
 		}

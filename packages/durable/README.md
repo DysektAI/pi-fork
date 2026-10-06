@@ -247,6 +247,8 @@ const harness = await Harness.open(storage, {
 
 A throw from `env` becomes the call's error result. Without an environment, the built-in tools fail with an error result. A fresh environment object per call is fine: `edit` and `write` serialize changes to one file by the environment's `id` and path. A custom `ExecutionEnv` sets `id` so that equal ids see the same files at the same paths, for example one id per container.
 
+Environments with symbolic links can implement the optional `readLink()` capability, returning the immediate target as an absolute path even when it does not exist. `NodeExecutionEnv` implements it. This lets `edit` and `write` share the target's lock through dangling links; a dangling link fails with `not_supported` when the environment cannot resolve it.
+
 Hosts can use the environment directly too, for example to show a project's files. `openBinaryReader()` reads byte ranges of one opened file, `openDirReader()` pages a directory, and `exec()` with an argv array runs a program without a shell, reporting which stream each output chunk came from:
 
 ```typescript
