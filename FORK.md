@@ -68,7 +68,7 @@ The script:
 6. Merges `main` into `local`.
 7. Takes upstream versions of conflicted generated model catalogs, then
    regenerates them during the build.
-8. Stops on genuine source overlap instead of guessing.
+8. Stops on genuine source overlap, leaving the current merge for manual resolution.
 9. Builds, runs the focused fork checks, and commits the merge.
 10. Atomically pushes the upstream mirror to `origin/main` and the fork result
     to `origin/local`, so either both validated refs advance or neither does.
@@ -76,6 +76,22 @@ The script:
 This uses normal merge history: no routine rebases, branch reconstruction, or
 force-pushes. A conflict is therefore tied to real overlapping edits, not to
 maintenance machinery.
+
+Failures leave the worktree, index, and any in-progress merge available for
+inspection. The script never rolls back files or deletes untracked work after
+a failed build or check. Inspect `git status` before resolving or abandoning a
+merge; another session may have created changes during validation.
+
+Git may record conflict resolutions locally if you enable `rerere`. The fork
+does not seed historical resolutions or install a custom CHANGELOG merge driver.
+Fork changes are documented in PRs and source releases; package changelogs stay
+upstream-owned.
+
+Existing clones retire the old Git registration automatically on their next
+`fork-sync.sh` run. To migrate without syncing, run
+`python3 .fork/retire-legacy-git-config.py` (`python` on Windows). It removes only
+the fork-owned attribute mapping and merge-driver section, preserving other
+attributes, configuration, and locally recorded conflict resolutions.
 
 ## Automation
 
@@ -168,9 +184,8 @@ conflict; extension-only customizations update independently.
 
 Before every upstream merge, the script creates a backup tag named
 `backup/sync-<timestamp>/local`, so the pre-sync `local` tip stays reachable.
-Retain the two most recent sets: the richer `fork-sync.sh` on
-`feat/fork-tooling` prunes older sets itself (`--keep-backups N`), while the
-script on `local` only creates them. Prune the rest by hand, and treat tags
+Retain the two most recent sets. The sync script only creates these tags;
+prune the rest by hand, and treat tags
 whose commits are no longer ancestors of any branch as deliberate keepers —
 they are the last reference to a superseded branch lineage:
 
@@ -194,13 +209,18 @@ for set in $(git tag -l 'backup/sync-*' | sed 's#/[^/]*$##' | sort -u | sed '$d'
 done
 ```
 
-To abandon a bad manual resolution:
+After inspecting the worktree and preserving any concurrent work, abandon a
+bad manual resolution with:
 
 ```bash
 git merge --abort
 # or, after a completed bad merge (preserves later history):
 git revert -m 1 <bad-merge-commit>
 ```
+
+The retired rebase-based tooling and its historical conflict-resolution cache
+are preserved at `archive/fork-tooling-20261006`. This tag is for inspection,
+not an executable source for synchronization.
 
 Check current divergence with:
 

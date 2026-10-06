@@ -39,7 +39,7 @@ Fork patches that belong upstream are proposed, not merged locally and forgotten
 - Keep one focused commit per proposal where practical, and run `npm run check` plus the affected tests before pushing.
 - Draft the proposal as an issue on `DysektAI/pi-fork` first, using the upstream issue template shape. Rewrite it in your own voice before moving it upstream: upstream auto-closes new-contributor issues, requires "your own voice" prose, caps issues at one screen, and blocks accounts that submit agent-generated slop.
 - Do not open an upstream PR until a maintainer replies `lgtm` in the documented command position. `lgtmi` clears issues only.
-- `.fork/rr-cache` is tracked only on `feat/fork-tooling`; `setup-fork.sh` restores it from `feat/fork-tooling` or `origin/feat/fork-tooling`. Never re-add it to `local`.
+- Keep conflict-resolution caches local to Git; do not import historical resolutions or add them to `local`.
 
 ## Code Quality
 
