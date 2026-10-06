@@ -27,10 +27,9 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 [[ -z "$(git status --porcelain)" ]] || die "Working tree is not clean. Commit or stash changes first."
 [[ "$(git branch --show-current)" == "local" ]] || die "Run fork-sync.sh from the local branch."
-INITIAL_HEAD="$(git rev-parse HEAD)"
 git config user.name >/dev/null 2>&1 || git config user.name "fork-sync"
 git config user.email >/dev/null 2>&1 || git config user.email "fork-sync@users.noreply.github.com"
-[[ ! -x .fork/setup-fork.sh ]] || ./.fork/setup-fork.sh >/dev/null
+"$PYTHON_BIN" .fork/retire-legacy-git-config.py
 
 say "Fetching upstream and origin"
 git fetch upstream --prune --tags
@@ -51,48 +50,29 @@ if git merge-base --is-ancestor main local; then
 fi
 
 backup="backup/sync-$(date +%Y%m%d-%H%M%S)/local"
-abort_merge() {
-	git merge --abort >/dev/null 2>&1 || true
-}
-restore_checkout() {
-	trap - ERR
-	abort_merge
-	if [[ "$already_current" -eq 1 ]]; then
-		git restore --source="$INITIAL_HEAD" --staged --worktree -- . >/dev/null 2>&1 || true
-		# Clean untracked build artifacts from the failed validation.
-		# The script verified a clean non-ignored tree before starting;
-		# any new untracked files were created by the build/check phase,
-		# though untracked files created concurrently after that check are also removed.
-		git clean -fd -- . >/dev/null 2>&1 || true
-	fi
-}
-fail() {
-	local message="$1"
-	restore_checkout
-	die "$message"
-}
-on_error() {
+report_failure() {
 	local status="$?"
-	restore_checkout
-	exit "$status"
-}
-on_signal() {
-	local status="$1"
-	restore_checkout
-	trap - INT TERM
-	exit "$status"
+	if [[ "$status" -ne 0 ]]; then
+		warn "Sync stopped. Worktree, index, and any in-progress merge were left for inspection; no automatic rollback or cleanup was performed."
+	fi
 }
 unexpected_changes() {
 	if [[ "$already_current" -eq 1 ]]; then
 		git status --porcelain
 	else
 		git diff --name-only
+		# Compare against the completed merge index, not HEAD, so upstream changes
+		# are expected but concurrent staging is never folded into the sync commit.
+		git diff --cached --name-only "$validation_tree" -- . \
+			':(exclude)packages/ai/src/*.generated.ts' \
+			':(exclude)packages/ai/src/providers/*.models.ts'
+		git ls-files --others --exclude-standard
 	fi
 }
 
-trap on_error ERR
-trap 'on_signal 130' INT
-trap 'on_signal 143' TERM
+trap report_failure EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ "$already_current" -eq 0 ]]; then
 	git tag "$backup" local
@@ -114,11 +94,12 @@ if [[ "$already_current" -eq 0 ]]; then
 		remaining="$(git diff --name-only --diff-filter=U)"
 		if [[ -n "$remaining" ]]; then
 			printf '%s\n' "$remaining" >&2
-			fail "Upstream overlaps fork code. Run 'git merge main', resolve the listed files on local, test, and commit. Backup: $backup"
+			die "Upstream overlaps fork code. Resolve the listed files in the current merge on local, test, and commit. Backup: $backup"
 		fi
 	fi
 fi
 
+validation_tree="$(git write-tree)"
 allow_lockfile_change=0
 if [[ "$DO_TEST" -eq 1 ]]; then
 	if [[ "${FORK_SYNC_NPM_CI:-0}" == "1" ]]; then
@@ -134,13 +115,13 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 	git add 'packages/ai/src/*.generated.ts' 'packages/ai/src/providers/*.models.ts' 2>/dev/null || true
 	unexpected="$(unexpected_changes)"
 	if [[ -n "$unexpected" ]]; then
-		fail "$(printf 'Unexpected build changes:\n%s' "$unexpected")"
+		die "$(printf 'Unexpected build changes:\n%s' "$unexpected")"
 	fi
 
 	say "Running repository checks"
 	if git diff --cached --name-only -- package-lock.json | grep -q .; then
 		if ! git diff --cached --quiet main -- package-lock.json; then
-			fail "Merged package-lock.json differs from upstream/main. Review the dependency changes manually."
+			die "Merged package-lock.json differs from upstream/main. Review the dependency changes manually."
 		fi
 		allow_lockfile_change=1
 	fi
@@ -148,7 +129,7 @@ if [[ "$DO_TEST" -eq 1 ]]; then
 	PI_ALLOW_LOCKFILE_CHANGE="$allow_lockfile_change" npm run check
 	unexpected="$(unexpected_changes)"
 	if [[ -n "$unexpected" ]]; then
-		fail "$(printf 'Repository checks modified tracked files:\n%s' "$unexpected")"
+		die "$(printf 'Repository checks modified tracked files:\n%s' "$unexpected")"
 	fi
 
 	say "Running focused fork checks"
@@ -165,7 +146,7 @@ fi
 if [[ "$already_current" -eq 0 ]]; then
 	PI_ALLOW_LOCKFILE_CHANGE="$allow_lockfile_change" git commit -m "merge: sync upstream/main into local"
 fi
-trap - ERR INT TERM
+trap - EXIT INT TERM
 
 if [[ "$DO_PUSH" -eq 1 ]]; then
 	git push --atomic origin main:main local:local

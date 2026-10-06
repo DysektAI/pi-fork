@@ -41,7 +41,7 @@ packages/env/bin/
 packages/env/daemon/target/
 todo.md
 plans/
-# Canonical copy lives on feat/fork-tooling; setup-fork.sh restores it from there.
+# Conflict-resolution caches belong in Git's local state, not the source tree.
 .fork/rr-cache/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/

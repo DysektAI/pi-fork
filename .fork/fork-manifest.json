@@ -29,14 +29,14 @@
       }
     },
     {
-      "branch": "feat/fork-tooling",
-      "summary": "Fork maintenance tooling: CHANGELOG merge driver, rerere setup, sync scripts, the tracked consumer job (.fork/local-sync.sh + .fork/systemd units), docs.",
+      "branch": "fork-maintenance",
+      "summary": "Merge-based upstream sync, drift inventory, the tracked consumer job (.fork/local-sync.sh + .fork/systemd units), and docs. Feature names identify patches, not branches that must remain live.",
       "base": "main",
       "mergeIntoLocal": true,
       "drift": {
         "type": "path-absent",
         "ref": "upstream/main",
-        "path": ".fork/changelog-merge.py",
+        "path": "fork-sync.sh",
         "note": "Tooling is inherently fork-only; upstream will never carry it. Probe stays ACTIVE."
       }
     },
