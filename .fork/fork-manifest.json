@@ -205,6 +205,20 @@
         "pattern": "expectedIssuer",
         "note": "Re-check both issuer validation and McpOAuthCredentialStore.remove before dropping these credential fixes."
       }
+    },
+    {
+      "branch": "fix/windows-biome-threads",
+      "summary": "npm run check runs Biome through scripts/biome.mjs, which caps Rayon at 8 threads on Windows so Biome 2.3.x does not crash while the GritQL plugin lints.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "version-gte",
+        "ref": "upstream/main",
+        "file": "package.json",
+        "jsonPath": "devDependencies.@biomejs/biome",
+        "minVersion": "2.4.0",
+        "note": "REDUNDANT once upstream uses Biome 2.4.0+: restore the plain biome command in the check script and delete scripts/biome.mjs."
+      }
     }
   ]
 }
