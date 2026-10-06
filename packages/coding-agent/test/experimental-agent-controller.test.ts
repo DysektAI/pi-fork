@@ -8,6 +8,27 @@ import { createAgentController } from "../src/experimental/services/agent-contro
 import { openFauxConversation, pendingResponse } from "./experimental-durable-support.ts";
 
 describe("AgentController service", () => {
+	// DysektAI/pi-fork#17: submission IDs are session-wide, controllers are conversation-scoped.
+	test("rejects another conversation's prompt before waiting or reading its answer", async () => {
+		const { harness, conversation, close } = await openFauxConversation([fauxAssistantMessage("private answer")]);
+		try {
+			const other = await harness.createConversation(
+				{
+					ownership: { kind: "ownerless" },
+					agent: { model: (await conversation.agent(BACKGROUND_CONTEXT)).model },
+				},
+				BACKGROUND_CONTEXT,
+			);
+			const submission = await other.submit({ type: "input", content: "private prompt" }, BACKGROUND_CONTEXT);
+			await submission.wait(BACKGROUND_CONTEXT);
+			await expect(
+				createAgentController(harness, conversation).waitForPrompt(String(submission.id), BACKGROUND_CONTEXT),
+			).rejects.toThrow(`Unknown prompt: ${submission.id}`);
+		} finally {
+			await close();
+		}
+	});
+
 	test("prompts the root conversation through the service catalogue", async () => {
 		const { harness, conversation, close } = await openFauxConversation([fauxAssistantMessage("hello back")]);
 		const host = await createFacetHost({
