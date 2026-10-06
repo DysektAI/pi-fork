@@ -16,6 +16,7 @@ import {
 	OAuthInsecureEndpointError,
 	OAuthIssuerMismatchError,
 	type OAuthTokens,
+	registerClient,
 } from "../src/oauth/index.ts";
 import { closeServers, listen, readBody } from "./helpers.ts";
 
@@ -407,6 +408,27 @@ describe("MCP OAuth", () => {
 		expect(await second.tokens()).toBeUndefined();
 	});
 
+	// #10493
+	it("registers with an application_type derived from the redirect URIs unless one is set", async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const origin = await listen(async (request, response) => {
+			const metadata = JSON.parse(await readBody(request)) as Record<string, unknown>;
+			bodies.push(metadata);
+			response.writeHead(201, { "content-type": "application/json" });
+			response.end(JSON.stringify({ ...metadata, client_id: "client" }));
+		});
+		const register = (redirect_uris: string[], application_type?: string) =>
+			registerClient(origin, {
+				clientMetadata: { redirect_uris, ...(application_type ? { application_type } : {}) },
+			});
+		await register(["http://127.0.0.1:1234/callback"]);
+		await register(["http://[::1]/callback"]);
+		await register(["com.example.app:/callback"]);
+		await register(["https://app.example/callback"]);
+		await register(["http://localhost/callback"], "web");
+		expect(bodies.map((body) => body.application_type)).toEqual(["native", "native", "native", "web", "web"]);
+	});
+
 	it("rejects authorization metadata whose issuer does not match discovery", async () => {
 		const origin = await listen(async (request, response, serverOrigin) => {
 			const url = new URL(request.url ?? "/", serverOrigin);
@@ -533,6 +555,26 @@ describe("OAuthCallbackServer pages", () => {
 			const response = await fetch(`${callback.redirectUrl}?code=abc&state=s1`);
 			expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
 			expect(await response.text()).toBe("Authorization complete. You may close this window.");
+			expect((await pending).code).toBe("abc");
+		} finally {
+			await callback.close();
+		}
+	});
+
+	// #10302
+	it("rejects a response on another path than the expected one", async () => {
+		const callback = await OAuthCallbackServer.listen({ extraPaths: ["/callback/server-id"] });
+		try {
+			const origin = new URL(callback.redirectUrl).origin;
+			const mixedUp = callback.waitForCallback("s1", "/callback/server-id");
+			mixedUp.catch(() => undefined);
+			const wrong = await fetch(`${origin}/callback?code=abc&state=s1`);
+			expect(wrong.status).toBe(400);
+			await expect(mixedUp).rejects.toThrow("arrived on another redirect URI");
+
+			const pending = callback.waitForCallback("s2", "/callback/server-id");
+			const right = await fetch(`${origin}/callback/server-id?code=abc&state=s2`);
+			expect(right.status).toBe(200);
 			expect((await pending).code).toBe("abc");
 		} finally {
 			await callback.close();
