@@ -1,5 +1,5 @@
 import { readlink, realpath } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 const fileMutationQueues = new Map<string, Promise<void>>();
 let registrationQueue = Promise.resolve();
@@ -14,7 +14,8 @@ function isMissingPathError(error: unknown): boolean {
 }
 
 async function getMutationQueueKey(filePath: string, links = 0): Promise<string> {
-	const resolvedPath = resolve(filePath);
+	// Preserve target components until the filesystem has followed intermediate symlinks.
+	const resolvedPath = isAbsolute(filePath) ? filePath : resolve(filePath);
 	try {
 		return await realpath(resolvedPath);
 	} catch (error) {
@@ -35,7 +36,7 @@ async function getMutationQueueKey(filePath: string, links = 0): Promise<string>
 	}
 	if (target !== undefined) {
 		if (links >= 40) throw new Error(`Too many symbolic links: ${filePath}`);
-		return getMutationQueueKey(resolve(await realpath(parent), target), links + 1);
+		return getMutationQueueKey(isAbsolute(target) ? target : `${await realpath(parent)}${sep}${target}`, links + 1);
 	}
 	return join(await getMutationQueueKey(parent, links), basename(resolvedPath));
 }

@@ -36,18 +36,27 @@ afterEach(async () => {
 
 describe("withFileMutationQueue", () => {
 	// DysektAI/pi-fork#17: the legacy tools must not bypass the durable queue fix.
-	it.each(["relative", "absolute", "chain", "directory", "aliased-parent"])(
+	it.each(["relative", "absolute", "chain", "directory", "aliased-parent", "missing-parent", "target-dotdot"])(
 		"serializes a dangling %s alias with its not-yet-created target",
 		async (kind) => {
 			const dir = await createTempDir();
-			const target = kind === "aliased-parent" ? join(dir, "real", "target.txt") : join(dir, "target.txt");
+			const target =
+				kind === "aliased-parent" || kind === "target-dotdot"
+					? join(dir, "real", "target.txt")
+					: kind === "missing-parent"
+						? join(dir, "missing", "target.txt")
+						: join(dir, "target.txt");
 			const alias =
 				kind === "directory"
 					? join(dir, "linked-directory", "target.txt")
 					: kind === "aliased-parent"
 						? join(dir, "linked-directory", "link.txt")
 						: join(dir, "alias.txt");
-			if (kind === "aliased-parent") {
+			if (kind === "target-dotdot") {
+				await mkdir(join(dir, "real", "sub"), { recursive: true });
+				await symlink(join(dir, "real", "sub"), join(dir, "linked-directory"));
+				await symlink("linked-directory/../target.txt", alias);
+			} else if (kind === "aliased-parent") {
 				await mkdir(join(dir, "real", "sub"), { recursive: true });
 				await symlink(join(dir, "real", "sub"), join(dir, "linked-directory"));
 				await symlink("../target.txt", join(dir, "real", "sub", "link.txt"));
@@ -55,7 +64,16 @@ describe("withFileMutationQueue", () => {
 				await symlink(dir, join(dir, "linked-directory"), process.platform === "win32" ? "junction" : "dir");
 			} else {
 				await symlink("target.txt", join(dir, "chain.txt"));
-				await symlink(kind === "absolute" ? target : kind === "chain" ? "chain.txt" : "target.txt", alias);
+				await symlink(
+					kind === "absolute"
+						? target
+						: kind === "chain"
+							? "chain.txt"
+							: kind === "missing-parent"
+								? "missing/target.txt"
+								: "target.txt",
+					alias,
+				);
 			}
 			const entered = createDeferred();
 			const release = createDeferred();
@@ -74,6 +92,7 @@ describe("withFileMutationQueue", () => {
 				await delay(20);
 				expect(secondEntered).toBe(false);
 			} finally {
+				if (kind === "missing-parent") await mkdir(join(dir, "missing"));
 				release.resolve();
 				await Promise.all([first, second]);
 			}

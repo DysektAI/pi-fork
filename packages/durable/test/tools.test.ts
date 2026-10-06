@@ -481,19 +481,23 @@ describe("durable tools", () => {
 		});
 
 		// DysektAI/pi-fork#17: a dangling symlink still names its future target.
-		it.each(["relative", "absolute", "chain", "missing-parent", "aliased-parent"])(
+		it.each(["relative", "absolute", "chain", "missing-parent", "aliased-parent", "target-dotdot"])(
 			"serializes writes through dangling %s aliases",
 			async (kind) => {
 				const env = new BlockingWriteExecutionEnv({ cwd: createTempDir() });
 				const targetPath =
 					kind === "missing-parent"
 						? "missing/target.txt"
-						: kind === "aliased-parent"
+						: kind === "aliased-parent" || kind === "target-dotdot"
 							? "real/target.txt"
 							: "target.txt";
 				await symlink("target.txt", `${env.cwd}/chain.txt`);
 				let aliasPath = "link.txt";
-				if (kind === "aliased-parent") {
+				if (kind === "target-dotdot") {
+					getOrThrow(await env.createDir("real/sub", undefined, BACKGROUND_CONTEXT));
+					await symlink(`${env.cwd}/real/sub`, `${env.cwd}/aliased-directory`);
+					await symlink("aliased-directory/../target.txt", `${env.cwd}/link.txt`);
+				} else if (kind === "aliased-parent") {
 					getOrThrow(await env.createDir("real/sub", undefined, BACKGROUND_CONTEXT));
 					await symlink(`${env.cwd}/real/sub`, `${env.cwd}/aliased-directory`);
 					await symlink("../target.txt", `${env.cwd}/real/sub/link.txt`);
