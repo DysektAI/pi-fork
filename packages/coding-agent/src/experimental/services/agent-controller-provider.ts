@@ -63,7 +63,9 @@ export function createAgentController(harness: Harness, conversation: Conversati
 		async waitForPrompt(operationId, context): Promise<AgentPromptResult> {
 			const id = parseSubmissionId(operationId);
 			const submission = id === undefined ? undefined : await harness.submission(id, context);
-			if (submission === undefined) throw new Error(`Unknown prompt: ${operationId}`);
+			if (submission === undefined || (await submission.status(context)).conversationId !== conversation.id) {
+				throw new Error(`Unknown prompt: ${operationId}`);
+			}
 			const settled = await submission.wait(context);
 			if (settled.status === "unanswered") return { status: "unanswered", text: null, reason: settled.reason };
 			const answer = settled.type === "input" ? settled.answer : undefined;
