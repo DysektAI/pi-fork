@@ -22,10 +22,14 @@ if (!npmCli || basename(npmCli) !== "npm-cli.js" || !existsSync(npmCli)) {
 		}
 		const executable = join(directory, "npm");
 		if (existsSync(executable)) {
-			const target = realpathSync(executable);
-			if (basename(target) === "npm-cli.js") {
-				npmCli = target;
-				break;
+			try {
+				const target = realpathSync(executable);
+				if (basename(target) === "npm-cli.js") {
+					npmCli = target;
+					break;
+				}
+			} catch {
+				// An unreadable or disappearing candidate must not hide a later usable npm installation.
 			}
 		}
 	}
@@ -97,12 +101,24 @@ for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
 		if (typeof via === "string") {
 			continue;
 		}
-		if (via === null || typeof via !== "object" || !severities.includes(via.severity)) {
+		let id;
+		if (typeof via?.url === "string" && URL.canParse(via.url)) {
+			const url = new URL(via.url);
+			if (url.protocol === "https:" || url.protocol === "http:") id = url.pathname.split("/").pop() || undefined;
+		}
+		if (!id && Number.isSafeInteger(via?.source) && via.source > 0) id = String(via.source);
+		if (
+			via === null ||
+			typeof via !== "object" ||
+			!severities.includes(via.severity) ||
+			typeof via.name !== "string" ||
+			via.name.trim().length === 0 ||
+			!id
+		) {
 			console.error("npm audit returned an invalid advisory.");
 			process.exit(1);
 		}
 		concreteAdvisories++;
-		const id = via.url?.split("/").pop() ?? String(via.source);
 		const accepted = acceptedAdvisories[id];
 		if (accepted && accepted.package === via.name) {
 			seenAccepted.add(id);

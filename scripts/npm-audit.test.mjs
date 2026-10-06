@@ -17,7 +17,7 @@ async function audit(t, report, status = 0) {
 const assert = require("node:assert/strict");
 assert.deepEqual(process.argv.slice(2), ["audit", "--omit=dev", "--json"]);
 process.stdout.write(${JSON.stringify(typeof report === "string" ? report : JSON.stringify(report))});
-process.exit(${status});
+process.exitCode = ${status};
 `);
 	return spawnSync(process.execPath, [script], {
 		cwd: root,
@@ -36,10 +36,21 @@ test("runs the npm JavaScript CLI without a shell or npm on PATH", async (t) => 
 	assert.match(result.stdout, /No unaccepted advisories/);
 });
 
+test("drains a large mock audit report before exiting", async (t) => {
+	const result = await audit(t, { ...report(), padding: "x".repeat(1024 * 1024) });
+	assert.equal(result.status, 0, result.stderr.slice(-300));
+});
+
 test("rejects an unaccepted advisory", async (t) => {
 	const result = await audit(t, report({ bad: { via: [{ name: "bad", severity: "high", url: "https://example.test/GHSA-new", title: "bad", range: "*" }] } }), 1);
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /Found 1 unaccepted advisories/);
+});
+
+test("allows an identified advisory below the configured audit level", async (t) => {
+	const result = await audit(t, report({ bad: { via: [{ name: "bad", severity: "low", source: 123 }] } }), 1);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /No unaccepted advisories/);
 });
 
 test("preserves the documented package-specific exception", async (t) => {
@@ -60,6 +71,9 @@ for (const [name, value, status] of [
 	["failed audit with empty advisory lists", report({ bad: { via: [] } }), 1],
 	["failed audit with only package references", report({ bad: { via: ["other"] } }), 1],
 	["unknown advisory severity", report({ bad: { via: [{ severity: "unknown" }] } }), 1],
+	["missing advisory package name", report({ bad: { via: [{ severity: "low", source: 1 }] } }), 1],
+	["missing advisory identity", report({ bad: { via: [{ severity: "low", name: "bad" }] } }), 1],
+	["invalid advisory identity", report({ bad: { via: [{ severity: "low", name: "bad", url: "invalid", source: "invalid" }] } }), 1],
 ]) {
 	test(`fails closed on ${name}`, async (t) => {
 		const result = await audit(t, value, status);
