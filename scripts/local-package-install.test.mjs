@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { installConsumer, smokeTestNpmConsumer, wireConsumer } from "./local-package-install.mjs";
+import { execNpmSync } from "./npm-command.mjs";
 import { produceArtifactSet } from "./package-artifacts.mjs";
 
 function writePackage(directory, manifest, files) {
@@ -17,6 +18,27 @@ function writePackage(directory, manifest, files) {
 		writeFileSync(join(directory, path), contents);
 	}
 }
+
+test("Windows npm resolution supports direct Node invocation and preserves arguments", { skip: process.platform !== "win32" }, (t) => {
+	const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-npm-command-test-"));
+	t.after(() => rmSync(temporaryRoot, { recursive: true, force: true }));
+	const helperUrl = new URL("./npm-command.mjs", import.meta.url).href;
+	const environment = { ...process.env };
+	delete environment.npm_execpath;
+	const invalidCli = join(temporaryRoot, "invalid.js");
+	writeFileSync(invalidCli, 'throw new Error("invalid entry must not execute");');
+	for (const npmCli of [undefined, invalidCli, join(temporaryRoot, "missing", "npm-cli.js")]) {
+		const env = { ...environment };
+		if (npmCli) env.npm_execpath = npmCli;
+		const version = execFileSync(process.execPath, ["--input-type=module", "--eval", `import { execNpmSync } from ${JSON.stringify(helperUrl)}; console.log(execNpmSync(["--version"], { encoding: "utf8" }).trim());`], { env, encoding: "utf8" });
+		assert.match(version.trim(), /^\d+\.\d+\.\d+$/);
+	}
+	const npmCli = join(temporaryRoot, "npm-cli.js");
+	writeFileSync(npmCli, "console.log(JSON.stringify(process.argv.slice(2)));");
+	const args = ["path with spaces", "& echo unsafe", "$(unsafe)", "--flag"];
+	const output = execFileSync(process.execPath, ["--input-type=module", "--eval", `import { execNpmSync } from ${JSON.stringify(helperUrl)}; process.stdout.write(execNpmSync(${JSON.stringify(args)}, { encoding: "utf8" }));`], { env: { ...environment, npm_execpath: npmCli }, encoding: "utf8" });
+	assert.deepEqual(JSON.parse(output), args);
+});
 
 function createArtifactSet(t) {
 	const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-local-package-install-test-"));
@@ -99,7 +121,7 @@ test("wires multiple direct packages without registry fallbacks", (t) => {
 		consumerDirectory,
 		packageNames: ["@pi-package-test/target", "@pi-package-test/second"],
 	});
-	execFileSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: consumerDirectory, stdio: "pipe" });
+	execNpmSync(["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: consumerDirectory, stdio: "pipe" });
 
 	const manifest = JSON.parse(readFileSync(join(consumerDirectory, "package.json"), "utf8"));
 	assert.match(manifest.dependencies["@pi-package-test/target"], /^file:/);
@@ -148,6 +170,13 @@ test("installs a package as the only direct dependency", (t) => {
 	assert.throws(
 		() => smokeTestNpmConsumer({ artifactSet, directory: consumerDirectory, packageName: "@pi-package-test/target" }),
 		/Public Pi package @pi-package-test\/target must declare a string main field/,
+	);
+	writeFileSync(installedManifestPath, installedManifestContents);
+	installedManifest.main = "./dist/index.js";
+	installedManifest.exports["."] = { node: "./dist/index.js", import: "./dist/nonexistent.js" };
+	writeFileSync(installedManifestPath, JSON.stringify(installedManifest));
+	assert.doesNotThrow(
+		() => smokeTestNpmConsumer({ artifactSet, directory: consumerDirectory, packageName: "@pi-package-test/target" }),
 	);
 	writeFileSync(installedManifestPath, installedManifestContents);
 	const lockPath = join(consumerDirectory, "package-lock.json");

@@ -455,6 +455,23 @@ describe("parseArgs", () => {
 			expect(result.noBuiltinTools).toBe(true);
 		});
 
+		test.each(["--tools", "-t"])("rejects missing %s operands without consuming another option", (flag) => {
+			for (const args of [[flag], [flag, "--print"]]) {
+				const result = parseArgs(args);
+				expect(result.tools).toBeUndefined();
+				expect(result.diagnostics).toEqual([{ type: "error", message: `${flag} requires a tool list` }]);
+				if (args.length > 1) expect(result.print).toBe(true);
+			}
+		});
+
+		test.each(["+", "-"])("rejects a modifier without a tool name: %s", (modifier) => {
+			const result = parseArgs(["--tools", modifier]);
+			expect(result.tools).toBeUndefined();
+			expect(result.diagnostics).toEqual([
+				{ type: "error", message: "--tools: +name and -name entries require a tool name" },
+			]);
+		});
+
 		test("parses --tools flag", () => {
 			const result = parseArgs(["--tools", "read,bash"]);
 			expect(result.tools).toEqual(["read", "bash"]);

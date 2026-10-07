@@ -84,6 +84,21 @@ describe("outputPad", () => {
 		ui.stop();
 	});
 
+	test("running bash loaders follow initial and changed output padding", () => {
+		const component = new BashExecutionComponent("pwd", ui, false, 0);
+		try {
+			const running = () => renderLines(component).find((line) => line.includes("Running..."));
+			expect(running()).toBeDefined();
+			expect(running()?.startsWith(" ")).toBe(false);
+			component.setOutputPad(1);
+			expect(running()?.startsWith(" ")).toBe(true);
+			component.setOutputPad(0);
+			expect(running()?.startsWith(" ")).toBe(false);
+		} finally {
+			component.setComplete(0, false);
+		}
+	});
+
 	test.each(components)("$name renders at outputPad 0 and 1", ({ create }) => {
 		const component = create(0);
 		const lines = renderLines(component);

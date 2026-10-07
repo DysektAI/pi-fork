@@ -156,6 +156,15 @@ describe("defaultTools setting", () => {
 		toolLessSession.dispose();
 	});
 
+	it("removes all copies of a duplicated default tool through SDK modifiers", async () => {
+		const session = await createSession(["read", "read", "write"], { tools: ["-read"] });
+		try {
+			expect(session.getActiveToolNames()).toEqual(["write"]);
+		} finally {
+			session.dispose();
+		}
+	});
+
 	it("applies +name and -name tool options to the default selection", async () => {
 		const inactiveTool: InlineExtension = (pi) => {
 			pi.registerTool({
@@ -189,6 +198,18 @@ describe("defaultTools setting", () => {
 		const toolLess = await createSession(["read"], { noTools: "all", tools: ["+inactive_tool"] }, [inactiveTool]);
 		expect(toolLess.getActiveToolNames()).toEqual(["inactive_tool"]);
 		toolLess.dispose();
+	});
+
+	it.each(["+", "-"])("rejects empty SDK tool modifiers: %s", async (modifier) => {
+		let error: unknown;
+		try {
+			const session = await createSession([], { tools: [modifier] });
+			session.dispose();
+		} catch (caught) {
+			error = caught;
+		}
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toBe("Invalid tools option: +name and -name entries require a tool name");
 	});
 
 	it("rejects invalid tool modifier options", async () => {

@@ -293,6 +293,87 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect(second.next).toBeUndefined();
 		}),
 
+		...(["ascending", "descending"] as const).map((order) =>
+			createCase(options, `merges preminted fork entries in ${order} ID order`, async (storage) => {
+				const rootId = await createRoot(storage);
+				const childEntryId = await storage.mintId<EntryId>();
+				const parentEntryId = await storage.mintId<EntryId>();
+				const childId = await storage.mintId<ConversationId>();
+				const excludedParentId = await storage.mintId<EntryId>();
+				await storage.commit(
+					[
+						{ type: "entry", value: entry(parentEntryId, rootId) },
+						{ type: "entry", value: entry(excludedParentId, rootId) },
+						{
+							type: "conversation",
+							value: { id: childId, parent: { conversationId: rootId, at: parentEntryId } },
+						},
+						{ type: "entry", value: entry(childEntryId, childId) },
+					],
+					context,
+				);
+				const expected = order === "ascending" ? [childEntryId, parentEntryId] : [parentEntryId, childEntryId];
+				const query = { conversationId: childId, order };
+				expect((await storage.scanEntries(query, 10, undefined, context)).items.map(({ id }) => id)).toEqual(
+					expected,
+				);
+				const first = await storage.scanEntries(query, 1, undefined, context);
+				expect(first.items.map(({ id }) => id)).toEqual(expected.slice(0, 1));
+				expect(first.next).toBeDefined();
+				const second = await storage.scanEntries({ conversationId: childId }, 1, first.next, context);
+				expect(second.items.map(({ id }) => id)).toEqual(expected.slice(1));
+				expect(second.next).toBeUndefined();
+				expect(
+					(await storage.scanEntries({ ...query, minEntryId: parentEntryId }, 10, undefined, context)).items.map(
+						({ id }) => id,
+					),
+				).toEqual([parentEntryId]);
+				expect(
+					(await storage.scanEntries({ ...query, maxEntryId: childEntryId }, 10, undefined, context)).items.map(
+						({ id }) => id,
+					),
+				).toEqual([childEntryId]);
+			}),
+		),
+
+		...(["conversation", "task", "submission"] as const).map((table) =>
+			createCase(options, `includes the final safe ${table} ID in descending scans`, async (storage) => {
+				const rootId = await createRoot(storage);
+				const previous = Number.MAX_SAFE_INTEGER - 1;
+				const last = Number.MAX_SAFE_INTEGER;
+				const writes = [previous, last].map((id): StorageWrite => {
+					if (table === "conversation") return { type: table, value: { id: idFromNumber<ConversationId>(id) } };
+					if (table === "task") {
+						return { type: table, value: pendingTask(idFromNumber<TaskId<JsonValue>>(id), rootId) };
+					}
+					return {
+						type: table,
+						value: {
+							id: idFromNumber<SubmissionId>(id),
+							conversationId: rootId,
+							type: "input",
+							status: "queued",
+						},
+					};
+				});
+				await storage.commit(writes, context);
+				const scan = (cursor: Cursor | undefined): Promise<Page<Identified, Cursor>> => {
+					switch (table) {
+						case "conversation":
+							return storage.scanConversations({ order: "descending" }, 1, cursor, context);
+						case "task":
+							return storage.scanTasks({ order: "descending" }, 1, cursor, context);
+						case "submission":
+							return storage.scanSubmissions({ order: "descending" }, 1, cursor, context);
+					}
+				};
+				const first = await scan(undefined);
+				expect(first.items.map(({ id }) => id)).toEqual([last]);
+				expect(first.next).toBeDefined();
+				expect((await scan(first.next)).items.map(({ id }) => id)).toEqual([previous]);
+			}),
+		),
+
 		createCase(options, "paginates conversations by opaque cursor in ascending ID order", async (storage) => {
 			const rootId = await createRoot(storage);
 			const secondId = await storage.mintId<ConversationId>();

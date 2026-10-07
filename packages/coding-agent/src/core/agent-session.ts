@@ -4297,6 +4297,7 @@ export class AgentSession {
 				this._extensionRunner.resolveToolRenderers(name, () => this.getToolDefinition(name)),
 			theme,
 			cwd: this.sessionManager.getCwd(),
+			outputPad: this.settingsManager.getOutputPad(),
 		});
 
 		return await exportSessionToHtml(this.sessionManager, this.state, {

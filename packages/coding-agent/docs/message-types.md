@@ -137,6 +137,7 @@ interface AssistantMessage {
   rawStopReason?: string;
   endTurn?: boolean;
   timestamp: number;
+  durationMs?: number;
 }
 ```
 
@@ -171,10 +172,11 @@ interface ToolResultMessage<TDetails = any> {
   nestedCalls?: NestedToolCalls;
   isError: boolean;
   timestamp: number;
+  durationMs?: number;
 }
 ```
 
-`details` is tool-specific. Optional `usage` reports nested model work performed by the tool and contributes to full-session statistics, but it is not part of the main model-call usage. `nestedCalls` records bounded metadata about calls this tool made to other tools:
+`details` is tool-specific. Optional `usage` reports nested model work performed by the tool and contributes to full-session statistics, but it is not part of the main model-call usage. `nestedCalls` records bounded metadata about calls this tool made to other tools. `complete: false` means calls remain unfinished or calls/arguments were omitted by recording limits; the list is not exhaustive:
 
 ```typescript
 interface NestedToolCalls {

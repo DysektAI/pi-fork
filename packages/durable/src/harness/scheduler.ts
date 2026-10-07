@@ -1263,6 +1263,9 @@ export class TaskScheduler {
 						} else if (this.#contextRetentionMs() > 0) {
 							this.#contexts.set(conversationId, { range, idleSince: kept?.idleSince ?? this.#now() });
 							this.#scheduleExpiry();
+						} else {
+							this.#contexts.delete(conversationId);
+							this.#scheduleExpiry();
 						}
 					}
 					return view;

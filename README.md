@@ -117,7 +117,7 @@ npm run check         # Lint, format, and type check
 Build every public package into one coherent local artifact set:
 
 ```bash
-npm run pack:packages -- --out .artifacts/pi-packages
+npm run pack:packages -- --out .artifacts/pi-packages --force
 ```
 
 This refreshes model data before building `pi-ai`. To avoid network access when
@@ -177,7 +177,7 @@ We treat npm dependency changes as reviewed code changes.
 - `package-lock.json` is the dependency ground truth. Pre-commit blocks accidental lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1` is set.
 - `npm run check` verifies pinned direct deps, native TypeScript import compatibility, and the generated coding-agent install lock.
 - The pi.dev installer installs from `packages/coding-agent/install-lock/`, generated from the root lockfile, to pin transitive deps. The npm package does not pin transitive deps.
-- Local release smoke tests and npm publication use the same tarball packer; npm publishes the validated tarballs rather than repacking workspace directories.
+- Local release smoke tests and npm publication use the same tarball packer. Publication creates its own artifact set and publishes those tarballs rather than repacking workspace directories.
 - Local release installs, documented npm installs, and `pi update --self` use `--ignore-scripts` where supported.
 - CI installs with `npm ci --ignore-scripts`, and a scheduled GitHub workflow runs `npm audit --omit=dev` plus `npm audit signatures --omit=dev`.
 - Install lock generation has an explicit allowlist for dependency lifecycle scripts; new lifecycle-script deps fail checks until reviewed.

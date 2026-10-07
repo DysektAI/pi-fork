@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { lazyStream } from "../src/api/lazy.ts";
+import { fauxProvider } from "../src/providers/faux.ts";
 import type { AssistantMessage } from "../src/types.ts";
 import { AssistantMessageEventStream, EventStream } from "../src/utils/event-stream.ts";
 
@@ -117,6 +119,22 @@ function message(timestamp: number, durationMs?: number): AssistantMessage {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+describe("lazyStream timing", () => {
+	it("times setup failures across a wall-clock millisecond boundary", async () => {
+		const model = fauxProvider().provider.getModels()[0];
+		const clock = vi.spyOn(Date, "now").mockReturnValueOnce(100).mockReturnValueOnce(101);
+		try {
+			const result = await lazyStream(model, async () => {
+				throw new Error("setup failed");
+			}).result();
+			expect(result.errorMessage).toBe("setup failed");
+			expect(result.durationMs).toBeGreaterThanOrEqual(0);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+});
+
 describe("AssistantMessageEventStream timing", () => {
 	it("sets durationMs on the final done or error message of a response it saw start", async () => {
 		const done = new AssistantMessageEventStream();
@@ -138,19 +156,25 @@ describe("AssistantMessageEventStream timing", () => {
 	});
 
 	it("keeps an existing duration, so a forwarding stream keeps the inner measurement", async () => {
-		const outer = new AssistantMessageEventStream();
-		await sleep(20);
-		const inner = new AssistantMessageEventStream();
-		const answer = message(Date.now());
-		inner.push({ type: "done", reason: "stop", message: answer });
-		const measured = answer.durationMs;
-		outer.push({ type: "done", reason: "stop", message: answer });
-		expect(answer.durationMs).toBe(measured);
-		expect(measured).toBeLessThan(20);
+		let now = 0;
+		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+		try {
+			const outer = new AssistantMessageEventStream();
+			now = 50;
+			const inner = new AssistantMessageEventStream();
+			const answer = message(Date.now());
+			now = 55;
+			inner.push({ type: "done", reason: "stop", message: answer });
+			expect(answer.durationMs).toBe(5);
+			outer.push({ type: "done", reason: "stop", message: answer });
+			expect(answer.durationMs).toBe(5);
 
-		const preset = message(Date.now(), 1234);
-		new AssistantMessageEventStream().push({ type: "done", reason: "stop", message: preset });
-		expect(preset.durationMs).toBe(1234);
+			const preset = message(Date.now(), 1234);
+			new AssistantMessageEventStream().push({ type: "done", reason: "stop", message: preset });
+			expect(preset.durationMs).toBe(1234);
+		} finally {
+			clock.mockRestore();
+		}
 	});
 
 	it("leaves a message untimed when it started before the stream, such as a fetched deferred result", () => {

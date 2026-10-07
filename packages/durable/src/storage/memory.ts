@@ -527,11 +527,7 @@ export class MemoryStorage implements Storage {
 		if (after !== undefined && order === "descending") maxEntryId = Math.min(maxEntryId ?? after, after - 1);
 		if (after !== undefined && order === "ascending") minEntryId = Math.max(minEntryId ?? after, after + 1);
 		const visible: EntryRecord[] = [];
-		const entries =
-			order === "descending"
-				? this.visibleEntries(query.conversationId, minEntryId, maxEntryId)
-				: this.visibleEntriesAscending(query.conversationId, minEntryId, maxEntryId);
-		for (const entry of entries) {
+		for (const entry of this.visibleEntries(query.conversationId, minEntryId, maxEntryId, order)) {
 			visible.push(entry);
 			if (visible.length > limit) break;
 		}
@@ -679,18 +675,24 @@ export class MemoryStorage implements Storage {
 		conversationId: ConversationId,
 		minEntryId: number = Number.NEGATIVE_INFINITY,
 		maxEntryId: number = Number.POSITIVE_INFINITY,
+		order: ScanOrder = "descending",
 	): Generator<EntryRecord> {
 		if (!this.state.conversations.has(conversationId)) {
 			throw new Error(`Unknown conversation: ${conversationId}`);
 		}
+		const segments: { readonly ids: readonly EntryId[]; readonly end: number; index: number }[] = [];
 		let currentId = conversationId;
 		let upperEntryId = maxEntryId;
 		while (true) {
 			const ids = this.state.entryIds.get(currentId) ?? [];
-			for (let index = upperBound(ids, upperEntryId) - 1; index >= 0; index--) {
-				const id = ids[index];
-				if (id < minEntryId) break;
-				yield this.state.entries.get(id)!;
+			const first = lowerBound(ids, minEntryId);
+			const end = upperBound(ids, upperEntryId);
+			if (first < end) {
+				segments.push({
+					ids,
+					end: order === "ascending" ? end : first - 1,
+					index: order === "ascending" ? first : end - 1,
+				});
 			}
 			const conversation = this.state.conversations.get(currentId)!;
 			if (conversation.parent === undefined) break;
@@ -698,35 +700,23 @@ export class MemoryStorage implements Storage {
 			if (upperEntryId < minEntryId) break;
 			currentId = conversation.parent.conversationId;
 		}
-	}
-
-	/** Visible entries oldest first: the fork chain's segments from the root conversation forward. */
-	private *visibleEntriesAscending(
-		conversationId: ConversationId,
-		minEntryId: number = Number.NEGATIVE_INFINITY,
-		maxEntryId: number = Number.POSITIVE_INFINITY,
-	): Generator<EntryRecord> {
-		if (!this.state.conversations.has(conversationId)) {
-			throw new Error(`Unknown conversation: ${conversationId}`);
-		}
-		const segments: { readonly conversationId: ConversationId; readonly upper: number }[] = [];
-		let currentId = conversationId;
-		let upperEntryId = maxEntryId;
+		// IDs can be minted before a fork exists, so segment ancestry does not determine ID order.
 		while (true) {
-			segments.push({ conversationId: currentId, upper: upperEntryId });
-			const conversation = this.state.conversations.get(currentId)!;
-			if (conversation.parent === undefined) break;
-			upperEntryId = Math.min(upperEntryId, conversation.parent.at);
-			if (upperEntryId < minEntryId) break;
-			currentId = conversation.parent.conversationId;
-		}
-		for (const segment of segments.reverse()) {
-			const ids = this.state.entryIds.get(segment.conversationId) ?? [];
-			for (let index = lowerBound(ids, minEntryId); index < ids.length; index++) {
-				const id = ids[index]!;
-				if (id > segment.upper) break;
-				yield this.state.entries.get(id)!;
+			let next: (typeof segments)[number] | undefined;
+			for (const segment of segments) {
+				if (segment.index === segment.end) continue;
+				if (
+					next === undefined ||
+					(order === "ascending"
+						? segment.ids[segment.index]! < next.ids[next.index]!
+						: segment.ids[segment.index]! > next.ids[next.index]!)
+				) {
+					next = segment;
+				}
 			}
+			if (next === undefined) break;
+			yield this.state.entries.get(next.ids[next.index]!)!;
+			next.index += order === "ascending" ? 1 : -1;
 		}
 	}
 

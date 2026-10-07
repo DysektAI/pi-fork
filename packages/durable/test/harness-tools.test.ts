@@ -448,7 +448,7 @@ describe("tool results", () => {
 		);
 		addHooks(setup.registry, ToolTask, {
 			beforeTool: async (call) => {
-				await sleep(100);
+				await sleep(400);
 				return call.id === "blocked" ? { block: "no" } : undefined;
 			},
 		});
@@ -459,7 +459,7 @@ describe("tool results", () => {
 		const byId = new Map(results(entries).map((result) => [result.toolCallId, result]));
 		for (const id of ["slow", "thrower"]) {
 			expect(byId.get(id)?.durationMs).toBeGreaterThanOrEqual(25);
-			expect(byId.get(id)?.durationMs).toBeLessThan(100);
+			expect(byId.get(id)?.durationMs).toBeLessThan(400);
 		}
 		expect(byId.get("thrower")?.isError).toBe(true);
 		expect(byId.get("blocked")).not.toHaveProperty("durationMs");

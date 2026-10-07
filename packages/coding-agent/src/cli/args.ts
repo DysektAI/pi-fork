@@ -148,7 +148,12 @@ export function parseArgs(args: string[]): Args {
 			result.noTools = true;
 		} else if (arg === "--no-builtin-tools" || arg === "-nbt") {
 			result.noBuiltinTools = true;
-		} else if ((arg === "--tools" || arg === "-t") && i + 1 < args.length) {
+		} else if (arg === "--tools" || arg === "-t") {
+			const next = args[i + 1];
+			if (next === undefined || next.startsWith("--")) {
+				result.diagnostics.push({ type: "error", message: `${arg} requires a tool list` });
+				continue;
+			}
 			const tools = args[++i]
 				.split(",")
 				.map((s) => s.trim())

@@ -31,8 +31,9 @@ function runtimeTarget(value) {
 		return undefined;
 	}
 	if (!value || typeof value !== "object") return undefined;
-	for (const condition of ["import", "node", "default"]) {
-		const target = runtimeTarget(value[condition]);
+	for (const [condition, candidate] of Object.entries(value)) {
+		if (!["import", "node", "default"].includes(condition)) continue;
+		const target = runtimeTarget(candidate);
 		if (target) return target;
 	}
 	return undefined;

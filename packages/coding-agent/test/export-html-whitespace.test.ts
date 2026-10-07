@@ -7,6 +7,26 @@ import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import type { Theme } from "../src/modes/interactive/theme/theme.ts";
 
 describe("export HTML tool output whitespace", () => {
+	it.each([0, 1])("uses configured output padding %s for custom call and result renderers", (outputPad) => {
+		const render = (padding: number): Component => ({
+			render: () => [`${" ".repeat(padding)}output`],
+			invalidate: () => {},
+		});
+		const options = {
+			getToolRenderers: (): Pick<ToolDefinition, "renderCall" | "renderResult"> => ({
+				renderCall: (_args, _theme, context) => render(context.outputPad),
+				renderResult: (_result, _options, _theme, context) => render(context.outputPad),
+			}),
+			theme: {} as Theme,
+			cwd: "/tmp",
+			outputPad,
+		};
+		const renderer = createToolHtmlRenderer(options);
+		const expected = `<div class="ansi-line">${" ".repeat(outputPad)}output</div>`;
+		expect(renderer.renderCall("id", "custom", {})).toBe(expected);
+		expect(renderer.renderResult("id", "custom", [], undefined, false)?.expanded).toBe(expected);
+	});
+
 	it("preserves whitespace for plain-text tool output lines without preserving template whitespace", () => {
 		const css = readFileSync(new URL("../src/core/export-html/template.css", import.meta.url), "utf-8");
 

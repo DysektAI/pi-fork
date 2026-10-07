@@ -29,7 +29,7 @@ import { describe, expect, it } from "vitest";
 import { resolveSettings } from "../src/harness/agent.ts";
 import type { SessionImpl } from "../src/session/session.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat, textOf, unanswered, waitFor } from "./chat-support.ts";
-import { addSection } from "./harness-support.ts";
+import { addHooks, addSection } from "./harness-support.ts";
 import { ControlledStorage, context } from "./session-support.ts";
 
 const ERROR_503 = fauxAssistantMessage([], { stopReason: "error", errorMessage: "503 Service Unavailable" });
@@ -86,6 +86,33 @@ function livePublications(harness: Harness): LiveState[] {
 }
 
 describe("generation", () => {
+	it("lets beforeRequest mutate cached messages without changing the transcript", async () => {
+		const setup = chatSetup();
+		const sent: string[] = [];
+		addHooks(setup.registry, GenerationTask, {
+			beforeRequest: ({ messages }) => {
+				const message = messages[0]!;
+				if (message.role !== "user") throw new Error("Expected a user message");
+				message.content = "customized";
+			},
+		});
+		setup.faux.setResponses([
+			(request) => {
+				sent.push(textOf(request.messages[0])!);
+				return fauxAssistantMessage("answer");
+			},
+		]);
+		const { harness, root } = await openChat(new MemoryStorage(), setup);
+		harness.resume();
+		expect(await (await root.submit({ type: "input", content: "original" }, context)).wait(context)).toMatchObject({
+			status: "done",
+		});
+		expect(sent).toEqual(["customized"]);
+		expect(setup.reports).toEqual([]);
+		expect((await root.context(context)).messages[0]).toMatchObject({ content: "original" });
+		await harness.close(context);
+	});
+
 	it("answers an input and settles its submission", async () => {
 		const setup = chatSetup();
 		addSection(setup.registry, "preamble", () => "You are helpful.", { tag: false });

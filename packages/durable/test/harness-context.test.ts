@@ -668,6 +668,43 @@ describe("conversation context", () => {
 		await harness.close(context);
 	});
 
+	it("releases an idle range when retention becomes zero during a context read", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+		const settings = { contextRetentionMs: 1_000 };
+		const { harness, registry, root, scanned } = await countingSetup({ settings });
+		const other = await harness.createConversation({ ownership: { kind: "ownerless" } }, context);
+		const Read = defineTask<Record<string, never>, { phase: "run" }, null>({
+			name: "test.context-disable-retention",
+			version: 1,
+			initial: () => ({ phase: "run" }),
+			phases: {
+				run: async (_task, runtime, taskContext) => {
+					const timers = vi.getTimerCount();
+					await runtime.context(root.id, taskContext);
+					expect(vi.getTimerCount()).toBe(timers + 1);
+					settings.contextRetentionMs = 0;
+					await runtime.context(root.id, taskContext);
+					expect(vi.getTimerCount()).toBe(timers);
+					const before = scanned.rows;
+					await runtime.context(root.id, taskContext);
+					expect(scanned.rows - before).toBe(22);
+					await runtime.commit(() => DONE, taskContext);
+				},
+			},
+			abort: async (_task, runtime, taskContext) => {
+				await runtime.commit(() => ABORTED, taskContext);
+			},
+		});
+		addTask(registry, Read);
+		harness.resume();
+		const id = await harness.commit(
+			(tx) => tx.createTask(Read, {}, { ownership: { kind: "conversation" }, conversationId: other.id }),
+			context,
+		);
+		expect((await harness.waitForTask(id, context)).state.outcome).toEqual(DONE.outcome);
+		await harness.close(context);
+	});
+
 	it("drops a conversation's context read once idle with zero retention", async () => {
 		const { harness, registry, root, scanned } = await countingSetup({ settings: { contextRetentionMs: 0 } });
 		const rows: Record<string, number> = {};

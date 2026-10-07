@@ -220,6 +220,149 @@
         "minVersion": "2.4.0",
         "note": "REDUNDANT once upstream uses Biome 2.4.0+: restore the plain biome command in the check script and delete scripts/biome.mjs."
       }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Record lazy setup-error timestamps after creating the response stream so millisecond boundaries retain durationMs.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/ai/src/api/lazy.ts",
+        "pattern": "const outer = new AssistantMessageEventStream\\(\\);\\s+const startedAt = Date.now",
+        "note": "Recheck the associated regression tests before dropping this sync review fix."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Reject missing tool-list operands without consuming following long options.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/cli/args.ts",
+        "pattern": "requires a tool list",
+        "note": "Recheck the associated regression tests before dropping this sync review fix."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Reject empty +name/-name tool modifiers and remove duplicate inherited tool names before applying CLI/SDK modifiers.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/settings-manager.ts",
+        "pattern": "entries require a tool name",
+        "note": "Recheck empty-name and duplicate-removal regressions before dropping either fix."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Run local package install tests with the Windows-safe npm helper; support direct Node invocation without npm_execpath.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "scripts/local-package-install.test.mjs",
+        "pattern": "execNpmSync",
+        "note": "Recheck scripts/npm-command.mjs active-Node/PATH fallback and argument preservation before dropping."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Prevent symlink/junction force-output deletion, clean failed temporary artifacts, and preserve array/keyed npm pack JSON compatibility.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "scripts/package-artifacts.mjs",
+        "pattern": "canonicalOutput",
+        "note": "Recheck canonical deletion guards, owned-temp cleanup, and both npm JSON formats."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Resolve active Node ESM export conditions in manifest insertion order.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "scripts/local-package-install.mjs",
+        "pattern": "Object.entries\\(value\\)",
+        "note": "Recheck node-before-import smoke regression."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Globally merge fork-visible entry IDs in both scan directions and include the final safe ID on first descending SQLite pages.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/durable/src/storage/memory.ts",
+        "pattern": "segment ancestry does not determine ID order",
+        "note": "Recheck SQLite initial bounds and both backend pagination/cutoff conformance before dropping."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Give beforeRequest hooks mutable message copies while preserving the frozen context cache.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/durable/src/harness/generation.ts",
+        "pattern": "structuredClone\\(view.messages\\)",
+        "note": "Recheck request customization and cached/transcript isolation."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Release cached idle context ranges after live retention changes to zero.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/durable/src/harness/scheduler.ts",
+        "pattern": "else \\{\\s+this\\.#contexts\\.delete\\(conversationId\\);\\s+this\\.#scheduleExpiry\\(\\);",
+        "note": "Recheck the zero-retention context-read regression; other deletion sites are not equivalent."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Pass the configured transcript output padding into HTML tool renderers.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/core/export-html/tool-renderer.ts",
+        "pattern": "outputPad = 1",
+        "note": "Recheck AgentSession settings forwarding and rendered call/result HTML."
+      }
+    },
+    {
+      "branch": "sync/upstream-oct07",
+      "summary": "Keep running Bash loader padding aligned with the transcript setting, including live changes.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "grep-absent",
+        "ref": "upstream/main",
+        "file": "packages/coding-agent/src/modes/interactive/components/bash-execution.ts",
+        "pattern": "this.loader.setPaddingX",
+        "note": "Recheck both initial and changed padding in the running loader test."
+      }
     }
   ]
 }

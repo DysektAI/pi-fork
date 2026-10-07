@@ -1811,7 +1811,8 @@ for example a child task created by a tool.
 `context()` captures its bounds on the Session line and derives the view from
 immutable entries off the line, like `Conversation.context()`. The scheduler keeps
 each conversation's last range and view in memory: a later read by any of its tasks
-with the same head marker scans and derives only the entries after that range's tail.
+with the same head marker usually scans and derives only the entries after that range's tail.
+An earlier cutoff or an appended edit to earlier history re-derives the cached range.
 A conversation keeps them while busy and for `contextRetentionMs` once idle.
 Expiry is checked on task changes and by one unreferenced timer, which never keeps
 the process alive; where timers cannot be unreferenced, as in Cloudflare Workers,
@@ -1911,7 +1912,8 @@ The execution checkpoint and memos disappear from the terminal representation.
 Terminal records remain queryable for waits, waiters, inspection, and reopen.
 
 The Session stamps lifecycle times on task records with the clock it was opened
-with (`HarnessOptions.now` for a Harness, `Date.now` by default): `startedAt` at
+with (`HarnessOptions.now` for a Harness or `createSession(storage, { now })`,
+`Date.now` by default): `startedAt` at
 the first change to `running`, `endedAt` at the change to `terminal`. Once set,
 each carries over from the replaced record, so `startedAt` survives waits, a
 `completing` hold, and reopen, and the span between them includes those. A task

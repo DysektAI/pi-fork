@@ -416,7 +416,7 @@ describe("agentLoop with AgentMessage", () => {
 			model: createModel(),
 			convertToLlm: identityConverter,
 			beforeToolCall: async ({ toolCall }) => {
-				await sleep(100);
+				await sleep(400);
 				return toolCall.id === "blocked" ? { block: true, reason: "no" } : undefined;
 			},
 		};
@@ -448,7 +448,7 @@ describe("agentLoop with AgentMessage", () => {
 		);
 		const [ran, blocked] = results;
 		expect(ran?.durationMs).toBeGreaterThanOrEqual(25);
-		expect(ran?.durationMs).toBeLessThan(100);
+		expect(ran?.durationMs).toBeLessThan(400);
 		expect(blocked?.isError).toBe(true);
 		expect(blocked).not.toHaveProperty("durationMs");
 	});

@@ -230,6 +230,7 @@ export function getToolListError(entries: readonly string[]): string | undefined
 	const modifiers = entries.filter(isToolModifier);
 	if (modifiers.length === 0) return undefined;
 	if (modifiers.length < entries.length) return "tool names cannot be mixed with +name or -name entries";
+	if (modifiers.some((entry) => entry.length === 1)) return "+name and -name entries require a tool name";
 	const pattern = modifiers.find((entry) => entry.includes("*"));
 	if (pattern) return `+name and -name entries take exact tool names, not patterns: ${pattern}`;
 	return undefined;
@@ -240,7 +241,7 @@ export function getToolListError(entries: readonly string[]): string | undefined
  * `-name` removes one. Other entries are ignored.
  */
 export function applyToolModifiers(base: readonly string[], entries: readonly string[]): string[] {
-	const tools = [...base];
+	const tools = [...new Set(base)];
 	for (const entry of entries) {
 		if (!isToolModifier(entry)) continue;
 		const name = entry.slice(1);

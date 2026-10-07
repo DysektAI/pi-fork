@@ -55,6 +55,7 @@ export class BashExecutionComponent extends Container {
 			(text) => theme.fg("muted", text),
 			`Running... (${keyText("tui.select.cancel")} to cancel)`, // Plain text for loader
 		);
+		this.loader.setPaddingX(outputPad);
 
 		// Bottom border
 		this.addChild(new DynamicBorder(borderColor));
@@ -72,6 +73,7 @@ export class BashExecutionComponent extends Container {
 
 	setOutputPad(outputPad: number): void {
 		this.outputPad = outputPad;
+		this.loader.setPaddingX(outputPad);
 		this.updateDisplay();
 	}
 

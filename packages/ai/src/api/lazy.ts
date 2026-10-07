@@ -47,8 +47,8 @@ export function lazyStream(
 	model: Model<Api>,
 	setup: () => Promise<AsyncIterable<AssistantMessageEvent>>,
 ): AssistantMessageEventStream {
-	const startedAt = Date.now();
 	const outer = new AssistantMessageEventStream();
+	const startedAt = Date.now();
 
 	setup()
 		.then((inner) => forwardStream(outer, inner))

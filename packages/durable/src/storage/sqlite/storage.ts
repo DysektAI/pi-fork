@@ -86,7 +86,11 @@ const page = <T extends { readonly id: Id<string> }>(
 const scanSql = (start: ScanStart): { readonly clause: string; readonly param: number; readonly direction: string } =>
 	start.order === "ascending"
 		? { clause: "id > ?", param: start.after ?? -1, direction: "ASC" }
-		: { clause: "id < ?", param: start.after ?? Number.MAX_SAFE_INTEGER, direction: "DESC" };
+		: {
+				clause: start.after === undefined ? "id <= ?" : "id < ?",
+				param: start.after ?? Number.MAX_SAFE_INTEGER,
+				direction: "DESC",
+			};
 
 const scopeColumns = (scope: DocumentRecord["scope"]): ScopeColumns => {
 	switch (scope.kind) {
@@ -335,77 +339,39 @@ export class SqliteStorage implements Storage {
 		cursor: Cursor | undefined,
 	): Promise<Page<EntryRecord, Cursor>> {
 		const { order, after } = scanStart(query.order, cursor, "descending");
-		if (order === "ascending") return this.readEntriesAscending(query, limit, after);
 		let conversation = await this.readConversation(query.conversationId);
 		if (conversation === undefined) throw new Error(`Unknown conversation: ${query.conversationId}`);
+		let lower: number | undefined = query.minEntryId;
 		let upper: number | undefined = query.maxEntryId;
-		if (after !== undefined) upper = Math.min(upper ?? Number.MAX_SAFE_INTEGER, after - 1);
+		if (after !== undefined && order === "descending") upper = Math.min(upper ?? after, after - 1);
+		if (after !== undefined && order === "ascending") lower = Math.max(lower ?? after, after + 1);
 		const values: EntryRecord[] = [];
 		while (true) {
 			const clauses = ["conversation_id = ?"];
 			const params: SqliteValue[] = [conversation.id];
-			if (query.minEntryId !== undefined) {
+			if (lower !== undefined) {
 				clauses.push("id >= ?");
-				params.push(query.minEntryId);
+				params.push(lower);
 			}
 			if (upper !== undefined) {
 				clauses.push("id <= ?");
 				params.push(upper);
 			}
-			params.push(limit + 1 - values.length);
+			// Each segment's first limit + 1 entries contain every candidate for the global page.
+			params.push(limit + 1);
 			const rows = await this.db.all<JsonRow>(
-				`SELECT record FROM entries WHERE ${clauses.join(" AND ")} ORDER BY id DESC LIMIT ?`,
+				`SELECT record FROM entries WHERE ${clauses.join(" AND ")} ORDER BY id ${order === "ascending" ? "ASC" : "DESC"} LIMIT ?`,
 				...params,
 			);
 			values.push(...rows.map((row) => parseJson<EntryRecord>(row.record)));
-			if (values.length > limit || conversation.parent === undefined) break;
-			upper = upper === undefined ? conversation.parent.at : Math.min(upper, conversation.parent.at);
-			if (query.minEntryId !== undefined && upper < query.minEntryId) break;
-			conversation = (await this.readConversation(conversation.parent.conversationId))!;
-		}
-		return page(values, limit, "descending");
-	}
-
-	/** Oldest first: the fork chain's segments from the root conversation forward, each up to its fork point. */
-	private async readEntriesAscending(
-		query: EntryQuery,
-		limit: number,
-		after: number | undefined,
-	): Promise<Page<EntryRecord, Cursor>> {
-		const segments: { readonly conversationId: ConversationId; readonly upper: number | undefined }[] = [];
-		let conversation = await this.readConversation(query.conversationId);
-		if (conversation === undefined) throw new Error(`Unknown conversation: ${query.conversationId}`);
-		let upper: number | undefined = query.maxEntryId;
-		while (true) {
-			segments.push({ conversationId: conversation.id, upper });
+			values.sort((left, right) => (order === "ascending" ? left.id - right.id : right.id - left.id));
+			if (values.length > limit + 1) values.length = limit + 1;
 			if (conversation.parent === undefined) break;
 			upper = upper === undefined ? conversation.parent.at : Math.min(upper, conversation.parent.at);
-			if (query.minEntryId !== undefined && upper < query.minEntryId) break;
+			if (lower !== undefined && upper < lower) break;
 			conversation = (await this.readConversation(conversation.parent.conversationId))!;
 		}
-		let lower: number | undefined = query.minEntryId;
-		if (after !== undefined) lower = Math.max(lower ?? after + 1, after + 1);
-		const values: EntryRecord[] = [];
-		for (const segment of segments.reverse()) {
-			const clauses = ["conversation_id = ?"];
-			const params: SqliteValue[] = [segment.conversationId];
-			if (lower !== undefined) {
-				clauses.push("id >= ?");
-				params.push(lower);
-			}
-			if (segment.upper !== undefined) {
-				clauses.push("id <= ?");
-				params.push(segment.upper);
-			}
-			params.push(limit + 1 - values.length);
-			const rows = await this.db.all<JsonRow>(
-				`SELECT record FROM entries WHERE ${clauses.join(" AND ")} ORDER BY id ASC LIMIT ?`,
-				...params,
-			);
-			values.push(...rows.map((row) => parseJson<EntryRecord>(row.record)));
-			if (values.length > limit) break;
-		}
-		return page(values, limit, "ascending");
+		return page(values, limit, order);
 	}
 
 	async task(id: TaskId, _context: Context): Promise<StoredTask | undefined> {

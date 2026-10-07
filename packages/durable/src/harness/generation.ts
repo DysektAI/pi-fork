@@ -193,7 +193,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const model = runtime.models.getModel(ref.provider, ref.modelId);
 			if (model === undefined) return failNoModel(runtime, ref, context);
 			const view = await runtime.context(conversationId, context, { at: cutoff });
-			let messages = view.messages;
+			let messages: readonly Message[] = structuredClone(view.messages);
 			await runtime.hooks.each("beforeRequest", async (hook) => {
 				const replaced = await hook({ messages }, runtime, context);
 				if (replaced !== undefined) messages = replaced.messages;
