@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { load } from "js-yaml";
+import { parse } from "yaml";
 
 // DysektAI/pi-fork#17: a job-level permissions map replaces workflow defaults.
 test("binary smoke tests grant checkout read access without write access", async () => {
-	const workflow = load(await readFile(new URL("../.github/workflows/build-binaries.yml", import.meta.url), "utf8"));
+	const workflow = parse(await readFile(new URL("../.github/workflows/build-binaries.yml", import.meta.url), "utf8"));
 	const job = workflow.jobs["smoke-test-binaries"];
 	assert.ok(job, "smoke-test-binaries job must exist");
 	assert.ok(job.steps.some((step) => step.uses?.startsWith("actions/checkout@")));
