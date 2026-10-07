@@ -194,6 +194,20 @@
       }
     },
     {
+      "branch": "sync/upstream-oct07",
+      "summary": "Pin shell-quote 1.11.0 to remediate GHSA-pqg4-j6r4-53mv in the sandbox runtime dependency tree.",
+      "base": "local",
+      "mergeIntoLocal": true,
+      "drift": {
+        "type": "version-gte",
+        "ref": "upstream/main",
+        "file": "package-lock.json",
+        "jsonPath": "packages.node_modules/shell-quote.version",
+        "minVersion": "1.11.0",
+        "note": "REDUNDANT once upstream locks a patched shell-quote. Check every resolved copy before removing the override; review the probe if dependency layout changes."
+      }
+    },
+    {
       "branch": "fix/windows-biome-threads",
       "summary": "npm run check runs Biome through scripts/biome.mjs, which caps Rayon at 8 threads on Windows so Biome 2.3.x does not crash while the GritQL plugin lints.",
       "base": "local",
