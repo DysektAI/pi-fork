@@ -56,6 +56,32 @@ test("force rejects linked output paths before deleting package contents", (t) =
 	}
 });
 
+test("force cannot replace the system temporary directory", (t) => {
+	const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-package-artifacts-test-"));
+	t.after(() => rmSync(temporaryRoot, { recursive: true, force: true }));
+	const repoRoot = join(temporaryRoot, "repo");
+	const systemTemp = join(temporaryRoot, "system-temp");
+	mkdirSync(repoRoot);
+	mkdirSync(systemTemp);
+	const marker = join(systemTemp, "marker.txt");
+	writeFileSync(marker, "preserve system temp");
+	const environment = { TEMP: process.env.TEMP, TMP: process.env.TMP, TMPDIR: process.env.TMPDIR };
+	try {
+		for (const key of Object.keys(environment)) process.env[key] = systemTemp;
+		assert.equal(tmpdir(), systemTemp);
+		assert.throws(
+			() => produceArtifactSet({ repoRoot, outDir: systemTemp, force: true, build: false, source: null }),
+			/system temporary directory/,
+		);
+		assert.equal(readFileSync(marker, "utf8"), "preserve system temp");
+	} finally {
+		for (const [key, value] of Object.entries(environment)) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+	}
+});
+
 test("failed packing removes only automatically allocated output", (t) => {
 	const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-package-artifacts-test-"));
 	t.after(() => rmSync(temporaryRoot, { recursive: true, force: true }));

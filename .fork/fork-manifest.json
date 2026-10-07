@@ -283,7 +283,7 @@
         "ref": "upstream/main",
         "file": "scripts/package-artifacts.mjs",
         "pattern": "canonicalOutput",
-        "note": "Recheck canonical deletion guards, owned-temp cleanup, and both npm JSON formats."
+        "note": "Recheck canonical deletion guards including the system temporary root, owned-temp cleanup, and both npm JSON formats."
       }
     },
     {

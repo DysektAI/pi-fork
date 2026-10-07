@@ -91,6 +91,9 @@ function prepareOutputDirectory(outDir, options) {
 	}
 	const canonicalOutput = resolve(realpathSync(ancestor), ...missingComponents);
 	const canonicalRoot = realpathSync(repoRoot);
+	if (canonicalOutput === realpathSync(tmpdir())) {
+		throw new Error(`Output directory must not be the system temporary directory: ${outputDirectory}`);
+	}
 	if (dirname(canonicalOutput) === canonicalOutput || isInsidePath(canonicalRoot, canonicalOutput)) {
 		throw new Error(`Output directory must not be the repository, its ancestor, or a filesystem root: ${outputDirectory}`);
 	}
