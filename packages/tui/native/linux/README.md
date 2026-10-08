@@ -20,4 +20,6 @@ Install the build dependencies plus `pkg-config`, `Xvfb`, and `xclip`, then run 
 node --test test/native-clipboard-linux.test.ts
 ```
 
+When `/tmp/.X11-unix` is read-only (WSLg), the test starts Xvfb on an abstract socket at display `:99` or above.
+
 Tests use isolated X11 servers, not the desktop clipboard. They skip when dependencies are missing.
