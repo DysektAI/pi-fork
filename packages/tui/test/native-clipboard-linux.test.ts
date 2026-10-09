@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { type ChildProcessWithoutNullStreams, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,16 +68,38 @@ async function readClipboard(method: string, env: NodeJS.ProcessEnv): Promise<Re
 	return JSON.parse(stdout) as ReaderResult;
 }
 
+// WSLg mounts /tmp/.X11-unix read-only, so Xvfb cannot create its socket file there.
+const x11SocketDirReadOnly = (() => {
+	try {
+		accessSync("/tmp/.X11-unix", constants.W_OK);
+		return false;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EROFS";
+	}
+})();
+
+// Listen only on the Linux abstract socket. The host display (WSLg :0) has no lock file, so
+// -displayfd would claim it; start above it and skip displays that are already active.
+async function startAbstractX11(t: TestContext, args: string[]) {
+	let lastError: unknown;
+	for (let display = 99; display < 109; display++) {
+		try {
+			return await startServer(t, "Xvfb", [`:${display}`, ...args, "-nolisten", "unix"], process.env);
+		} catch (error) {
+			lastError = error;
+		}
+	}
+	throw lastError;
+}
+
 describe("native Linux clipboard", { skip: !dependenciesAvailable, timeout: 60000 }, () => {
 	let directory: string;
 
 	async function startX11(t: TestContext) {
-		const { child, ready } = await startServer(
-			t,
-			"Xvfb",
-			["-displayfd", "1", "-screen", "0", "640x480x24", "-nolisten", "tcp"],
-			process.env,
-		);
+		const args = ["-displayfd", "1", "-screen", "0", "640x480x24", "-nolisten", "tcp"];
+		const { child, ready } = x11SocketDirReadOnly
+			? await startAbstractX11(t, args)
+			: await startServer(t, "Xvfb", args, process.env);
 		return { child, env: { ...process.env, DISPLAY: `:${ready}` } };
 	}
 
