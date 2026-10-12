@@ -182,34 +182,20 @@
     },
     {
       "branch": "fix/mcp-oauth-credentials",
-      "summary": "Validate supplied authorization-response issuers without server metadata, and remove both named and legacy OAuth credentials on sign-out.",
+      "summary": "Remove both named and legacy OAuth credentials on sign-out. The former issuer check without server metadata was dropped in favor of upstream c5f5b3282, which rejects any iss when no metadata was discovered.",
       "base": "local",
       "mergeIntoLocal": true,
       "drift": {
         "type": "grep-absent",
         "ref": "upstream/main",
-        "file": "packages/mcp/src/oauth/flow.ts",
-        "pattern": "expectedIssuer",
-        "note": "Re-check both issuer validation and McpOAuthCredentialStore.remove before dropping these credential fixes."
-      }
-    },
-    {
-      "branch": "sync/upstream-oct07",
-      "summary": "Pin shell-quote 1.11.0 to remediate GHSA-pqg4-j6r4-53mv in the sandbox runtime dependency tree.",
-      "base": "local",
-      "mergeIntoLocal": true,
-      "drift": {
-        "type": "version-gte",
-        "ref": "upstream/main",
-        "file": "package-lock.json",
-        "jsonPath": "packages.node_modules/shell-quote.version",
-        "minVersion": "1.11.0",
-        "note": "REDUNDANT once upstream locks a patched shell-quote. Check every resolved copy before removing the override; review the probe if dependency layout changes."
+        "file": "packages/coding-agent/src/extensions/mcp/oauth.ts",
+        "pattern": "!\\(legacyKey in states\\)\\)",
+        "note": "Re-check McpOAuthCredentialStore.remove before dropping this credential fix."
       }
     },
     {
       "branch": "fix/windows-biome-threads",
-      "summary": "npm run check runs Biome through scripts/biome.mjs, which caps Rayon at 8 threads on Windows so Biome 2.3.x does not crash while the GritQL plugin lints.",
+      "summary": "scripts/biome-check.mjs caps Rayon at 8 threads on Windows so Biome 2.3.x does not crash while the GritQL plugin lints.",
       "base": "local",
       "mergeIntoLocal": true,
       "drift": {
@@ -218,7 +204,7 @@
         "file": "package.json",
         "jsonPath": "devDependencies.@biomejs/biome",
         "minVersion": "2.4.0",
-        "note": "REDUNDANT once upstream uses Biome 2.4.0+: restore the plain biome command in the check script and delete scripts/biome.mjs."
+        "note": "REDUNDANT once upstream uses Biome 2.4.0+: drop the RAYON_NUM_THREADS cap from scripts/biome-check.mjs."
       }
     },
     {
