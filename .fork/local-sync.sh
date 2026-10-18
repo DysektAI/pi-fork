@@ -84,10 +84,34 @@ if ! npm install --ignore-scripts --no-audit --no-fund >>"$LOG" 2>&1; then
 	exit 1
 fi
 
-# 6. Rebuild dist/ so the launcher runs current code.
+# 6. Rebuild dist/ so the launcher runs current code. `npm run build` regenerates
+#    model catalogs from live provider APIs, so a new upstream model can break it
+#    with no code change. The data/ catalogs are gitignored, so keep the last set
+#    that built and fall back to it (with the committed *.models.ts) on failure.
+MODEL_DATA="packages/ai/src/providers/data"
+GOOD_MODEL_DATA="$STATE_DIR/model-data-last-good"
 if ! npm run build >>"$LOG" 2>&1; then
-	log "ERROR: npm run build failed"
-	exit 1
+	if [[ ! -d "$GOOD_MODEL_DATA" ]]; then
+		log "ERROR: npm run build failed and no last-good model data exists"
+		exit 1
+	fi
+	log "WARN: npm run build failed; retrying with last-good model data (build:offline)"
+	if ! git checkout -- packages/ai/src >>"$LOG" 2>&1 ||
+		! rm -rf "$MODEL_DATA" || ! cp -r "$GOOD_MODEL_DATA" "$MODEL_DATA"; then
+		log "ERROR: could not restore last-good model data"
+		exit 1
+	fi
+	if ! npm run build:offline >>"$LOG" 2>&1; then
+		log "ERROR: npm run build:offline with last-good model data failed"
+		exit 1
+	fi
+	log "local-sync WARN: built from last-good model data; live catalog regeneration is failing"
+	exit 0
+fi
+
+if ! { rm -rf "$GOOD_MODEL_DATA.tmp" && cp -r "$MODEL_DATA" "$GOOD_MODEL_DATA.tmp" &&
+	rm -rf "$GOOD_MODEL_DATA" && mv "$GOOD_MODEL_DATA.tmp" "$GOOD_MODEL_DATA"; }; then
+	log "WARN: could not save last-good model data"
 fi
 
 log "local-sync OK"
