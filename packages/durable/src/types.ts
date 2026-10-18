@@ -133,16 +133,90 @@ export type TaskDocFamilyToken<T extends JsonObject, I extends JsonValue> = DocF
 	DocFamilyDefinition<T, I> & { readonly scope: "task" }
 >;
 
+/** The task a report is about. */
+export type ReportTask = {
+	readonly id: TaskId;
+	/** The task's registered name. */
+	readonly kind: string;
+	readonly conversationId: ConversationId;
+};
+
+/** A host callback, by its `HarnessOptions` name; `env` is the environment builder, `models` a provider call. */
+export type HostCallback = "now" | "settings" | "registry" | "env" | "models" | "setTimer" | "onWake";
+
+/**
+ * What a report to `HarnessOptions.onReport` is about. `extension`, where present, names the extension whose code
+ * failed, when known; for a task's own code, the one that installed the definition the task ran.
+ * - `session_failed`: the error failed the Session, which closes: a Storage error, often a platform reset.
+ * - `task_faulted`: the task ended `faulted`: its phase threw (`reason: "threw"`), or its abort handler was cut off
+ *   `settings.restartLimit` times (`reason: "restart_limit"`).
+ * - `task_parked`: the restart limit parked the task until `Harness.retryTask()`.
+ * - `migration_failed`: the task's stored state could not be migrated; it is blocked until the registry changes.
+ * - `task_outdated`: a running task keeps running under its old definition, which was uninstalled (`missing_task`)
+ *   or replaced by one that cannot take over its state (`incompatible_task`).
+ * - `task_error`: the task's own `runtime.report()`, or a failure in running it.
+ * - `extension_error`: a hook, a section, a wrapper, or a tool's invalid structured output; with the task that ran it,
+ *   or, outside a task, the conversation whose agent was resolved.
+ * - `host_error`: a host callback threw; with the task that called it, if one did.
+ * - `listener_error`: a commit, close, watch, view, or document listener threw.
+ */
+export type ReportInfo =
+	| { readonly type: "session_failed" }
+	| {
+			readonly type: "task_faulted";
+			readonly task: ReportTask;
+			readonly extension?: string;
+			readonly reason: "threw" | "restart_limit";
+	  }
+	| { readonly type: "task_parked"; readonly task: ReportTask; readonly extension?: string }
+	| { readonly type: "migration_failed"; readonly task: ReportTask; readonly extension?: string }
+	| {
+			readonly type: "task_outdated";
+			readonly task: ReportTask;
+			readonly extension?: string;
+			readonly reason: "missing_task" | "incompatible_task";
+	  }
+	| { readonly type: "task_error"; readonly task: ReportTask; readonly extension?: string }
+	| {
+			readonly type: "extension_error";
+			readonly extension?: string;
+			readonly task?: ReportTask;
+			readonly conversationId?: ConversationId;
+	  }
+	| { readonly type: "host_error"; readonly callback: HostCallback; readonly task?: ReportTask }
+	| { readonly type: "listener_error" };
+
+/** Whose code a task's `runtime.report()` is about when not the task's own: an extension's, or a host callback. */
+export type ReportFrom =
+	| { readonly type: "extension"; readonly extension?: string }
+	| { readonly type: "host"; readonly callback: HostCallback };
+
+/**
+ * A host timer, given as `HarnessOptions.setTimer`: call `callback` once, about `delayMs` from now, and return
+ * a function that disarms it. `background` timers only free memory, and a host may decline one by returning
+ * `undefined`, for example where a pending timer keeps the process from hibernating; the Harness then frees that memory
+ * at later commits. Other timers pace or resume work: one the host throws on or declines is armed with `setTimeout`.
+ * A timer should not fire early; callers check their clock again when it fires.
+ */
+export type SetTimer = (
+	callback: () => void,
+	delayMs: number,
+	options: { readonly background: boolean },
+) => (() => void) | undefined;
+
 /** Live task record reserved by one invocation. */
 export type RunningTask<I, S, R> = TaskRecord<I, S, R> & {
 	readonly state: Extract<TaskState<S, R>, { readonly status: "running" }>;
 };
 
 /**
- * Next state a task commits for itself: a replacement checkpoint, a wait, or its outcome. A returned `terminal` state is
+ * Next state a task commits for itself: a replacement checkpoint, a wait on tasks, a sleep, or its outcome. A returned `terminal` state is
  * stored as `completing` while ordinary owned work below the task is live (spec §5.5).
  */
-export type NextTaskState<S, R> = Extract<TaskState<S, R>, { readonly status: "running" | "waiting" | "terminal" }>;
+export type NextTaskState<S, R> = Extract<
+	TaskState<S, R>,
+	{ readonly status: "running" | "waiting" | "sleeping" | "terminal" }
+>;
 
 /**
  * Runs one checkpoint phase. It must commit a changed checkpoint or a terminal outcome through `runtime.commit()`;
@@ -181,6 +255,7 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
 	agent(context: Context): Promise<Agent>;
 	/** `HarnessOptions.settings`, resolved at each access. */
 	readonly settings: Settings;
+	/** `HarnessOptions.models`, resolved at each access. */
 	readonly models: Models;
 	/** Calls `HarnessOptions.env` for the task's conversation; rejects with its error. */
 	env(context: Context): Promise<ExecutionEnv | undefined>;
@@ -233,10 +308,25 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
 	context(conversationId: ConversationId, context: Context, options?: { readonly at?: EntryId }): Promise<ContextView>;
 	/** The Harness clock. */
 	now(): number;
-	/** Forward a non-fatal failure to `HarnessOptions.onReport`. */
-	report(error: unknown): void;
-	/** Resolve once the Harness clock reaches `until`; rejects when the invocation or `context` is cancelled. */
-	sleep(until: number, context: Context): Promise<void>;
+	/**
+	 * Call `callback` once after about `delayMs` on the Harness's timer (`HarnessOptions.setTimer`), for pacing work
+	 * inside a phase, such as throttled progress commits. Not durable: the invocation's end disarms it, and after its end
+	 * nothing is armed. Returns a function that disarms it. Wait for time between phases with `sleepUntil()`.
+	 */
+	setTimer(callback: () => void, delayMs: number): () => void;
+	/**
+	 * Forward a non-fatal failure to `HarnessOptions.onReport`, with this task in its info: a `task_error` about the
+	 * task's own code, or, with `from`, an `extension_error` about extension code it called, such as a section, or a
+	 * `host_error` about a host callback, such as the environment builder.
+	 */
+	report(error: unknown, from?: ReportFrom): void;
+	/**
+	 * Commit a sleep: the task holds no invocation until the Harness clock reaches `until`, then resumes at `checkpoint`.
+	 * Resolves once the sleep is stored, not when the time comes; the phase returns right after. Returning
+	 * `{ status: "sleeping", until, checkpoint }` from `commit()` is the same sleep, for one that must commit together
+	 * with other writes.
+	 */
+	sleepUntil(until: number, checkpoint: S, context: Context): Promise<void>;
 }
 
 /** Executable durable state machine definition, registered in the registry by `name`. */
@@ -523,6 +613,16 @@ export type TaskState<S, R> =
 			readonly outcome?: never;
 	  }
 	| {
+			/**
+			 * Parked without an invocation until the Harness clock reaches `until`, in milliseconds on the
+			 * `HarnessOptions.now` clock; then resumes at `checkpoint`. An abort mark does not wait for it.
+			 */
+			readonly status: "sleeping";
+			readonly checkpoint: S;
+			readonly until: number;
+			readonly outcome?: never;
+	  }
+	| {
 			/** Outcome decided; becomes terminal once no ordinary owned work below is live. Runs no more code. */
 			readonly status: "completing";
 			readonly checkpoint?: never;
@@ -567,13 +667,22 @@ type TaskRecordBase<I, R> = {
 	readonly startedAt?: number;
 	/** Wall-clock milliseconds of the change to `terminal`, stamped by the Session; absent while live. */
 	readonly endedAt?: number;
+	/**
+	 * How many times in a row a crash, eviction, or reset cut the task off while it ran, without the task changing its
+	 * state since; open counts them, and a close does not. At `HarnessSettings.restartLimit` the task is parked as blocked
+	 * until `Harness.retryTask()`.
+	 */
+	readonly restarts?: number;
 };
 
 /** Complete replacement record for one durable task state machine. */
 export type TaskRecord<I, S, R> = TaskRecordBase<I, R> &
 	(
 		| {
-				readonly state: Extract<TaskState<S, R>, { readonly status: "pending" | "running" | "waiting" }>;
+				readonly state: Extract<
+					TaskState<S, R>,
+					{ readonly status: "pending" | "running" | "waiting" | "sleeping" }
+				>;
 				/** Small first-writer-wins values retained while the task can run. */
 				readonly memos?: Readonly<Record<string, JsonValue>>;
 		  }

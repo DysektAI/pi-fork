@@ -58,6 +58,7 @@ import type {
 	ToolExecutionResult,
 	ToolRegistration,
 } from "../harness/types.ts";
+import { rankDocuments } from "../search.ts";
 import type { JsonObject } from "../types.ts";
 import {
 	type CodemodeNamespace,
@@ -77,7 +78,6 @@ import {
 	MODEL_CALLS,
 } from "./models.ts";
 import { DEFAULT_MAX_OUTPUT_TOKENS, formatResult, type OutputFile } from "./output.ts";
-import { rankDocuments } from "./search.ts";
 
 /**
  * Version of everything in this module that turns stored results into what a script sees: result mapping, globals,
@@ -252,7 +252,10 @@ export function createCodemodeExtension(options: CodemodeToolOptions): Extension
 		sections: [
 			section("codemode", (input) =>
 				codemodeSection(
-					input.agent.callable.filter((tool) => !tool.name.startsWith(CODEMODE_INTERNAL_PREFIX)),
+					// Deferred tools are found with `searchTools()`, as the coding agent leaves them out too.
+					input.agent.callable.filter(
+						(tool) => !tool.name.startsWith(CODEMODE_INTERNAL_PREFIX) && tool.deferred !== true,
+					),
 					options.namespaces ?? [],
 					options.inlineBudget ?? DEFAULT_CODEMODE_INLINE_BUDGET,
 				),
@@ -392,7 +395,7 @@ class CodemodeCall {
 			}
 			entry.tools.push(tool.name);
 		}
-		const now = Date.now();
+		const now = api.now();
 		const seed = crypto.getRandomValues(new Uint32Array(1))[0]!;
 		type Found =
 			| { done: ToolExecutionResult }
@@ -445,7 +448,7 @@ class CodemodeCall {
 				),
 			);
 		}
-		const remaining = this.start.deadline === undefined ? undefined : this.start.deadline - Date.now();
+		const remaining = this.start.deadline === undefined ? undefined : this.start.deadline - this.api.now();
 		if (remaining !== undefined && remaining <= 0) {
 			return this.decide(errorResult(`Script timed out: its deadline passed while it was interrupted.`));
 		}
@@ -543,7 +546,7 @@ class CodemodeCall {
 		const details = this.details();
 		const formatted = await formatResult(result, {
 			generatedImages: this.generatedImages,
-			wallMs: Date.now() - this.start.startedAt,
+			wallMs: this.api.now() - this.start.startedAt,
 			maxOutputTokens: this.start.maxOutputTokens,
 			calls: details.calls,
 			limits: OUTPUT_LIMITS,
@@ -796,7 +799,9 @@ class CodemodeCall {
 					}));
 		running.then(
 			(done) => {
-				this.queue.push({ id: call.id, at: Date.now(), ...done });
+				// A result after the outcome is decided has nowhere to go, and the call's API has ended.
+				if (this.stopped) return;
+				this.queue.push({ id: call.id, at: this.api.now(), ...done });
 				void this.pump();
 			},
 			(error: unknown) => {

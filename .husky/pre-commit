@@ -6,7 +6,7 @@ STAGED_FILES=$(mktemp)
 trap 'rm -f "$STAGED_FILES"' EXIT
 git diff --cached --name-only --diff-filter=d -z > "$STAGED_FILES"
 BROWSER_SMOKE_FILES=$(git diff --cached --name-only -- packages/ai/ packages/web-ui/ package.json package-lock.json)
-MOBILE_CHECK_FILES=$(git diff --cached --name-only -- apps/mobile/ packages/ package.json package-lock.json tsconfig.json tsconfig.base.json)
+P2_CHECK_FILES=$(git diff --cached --name-only -- apps/p2/ packages/ package.json package-lock.json tsconfig.json tsconfig.base.json)
 
 node scripts/check-lockfile-commit.mjs
 if [ $? -ne 0 ]; then
@@ -21,13 +21,13 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Pi Mobile has its own check (own biome.json, TypeScript 5.9; apps/ is outside the root Biome and tsc configs).
+# p2 has its own check (own biome.json, TypeScript 5.9; apps/ is outside the root Biome and tsc configs).
 # apps/ exists only in pi-private.
-if [ -d apps/mobile ] && [ -n "$MOBILE_CHECK_FILES" ]; then
-  echo "Checking apps/mobile..."
-  npm --prefix apps/mobile run check
+if [ -d apps/p2 ] && [ -n "$P2_CHECK_FILES" ]; then
+  echo "Checking apps/p2..."
+  npm --prefix apps/p2 run check
   if [ $? -ne 0 ]; then
-    echo "❌ apps/mobile checks failed."
+    echo "❌ apps/p2 checks failed."
     exit 1
   fi
 fi

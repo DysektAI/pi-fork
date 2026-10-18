@@ -125,6 +125,90 @@ const again = await root.submit({ type: "input", content: "Hello", requestId: "g
 
 `harness.submission(id)` reacquires a submission by ID, for example to wait for it after a restart.
 
+### Sleeping and Waking Up
+
+A task waits for time by ending its phase asleep. The sleep is stored, so the task holds no invocation meanwhile, survives restarts, and resumes at the checkpoint once the Harness clock reaches `until`:
+
+```typescript
+const Reminder = defineTask<{ text: string; at: number }, { phase: "wait" } | { phase: "deliver" }, null>({
+	name: "app.reminder",
+	version: 1,
+	initial: () => ({ phase: "wait" }),
+	phases: {
+		// Resolves once the sleep is stored; the phase ends there.
+		wait: (task, runtime, context) => runtime.sleepUntil(task.input.at, { phase: "deliver" }, context),
+		deliver: async (task, runtime, context) => {
+			await notify(task.input.text);
+			await runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), context);
+		},
+	},
+	abort: (_task, runtime, context) =>
+		runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context),
+});
+```
+
+There is no sleep in the middle of a phase: a phase reruns from its top after a restart, so work after the wait goes in the next phase, and what it needs goes in the checkpoint. `{ status: "sleeping", until, checkpoint }` returned from `runtime.commit()` is the same sleep, committed together with other writes. Retry backoffs and deferred-response polls of the built-in tasks sleep the same way.
+
+The timers of the Session, the scheduler, and its tasks go through `setTimer` (default `setTimeout`), and their times through `now` (default `Date.now`); pass both to run a Harness on a fake clock. The Node.js environment, file watcher, and image worker keep their own timers. Sleep deadlines are stored on `now`, so every process that opens one storage must use the same clock. While scheduling runs, a timer resumes sleeping tasks when they are due and keeps a Node.js process alive meanwhile.
+
+A host whose process can be evicted, such as a Cloudflare Durable Object, wakes it itself. With `onWake`, the Harness arms no timer for sleeps; it tells the host what `harness.wake()` says whenever that changes: `active` while some task can run now or is running, and `at`, the earliest sleep. The host keeps its alarm armed and calls `resume()` when it fires:
+
+```typescript
+export class Session extends DurableObject<Env> {
+	#harness!: Harness;
+
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		void ctx.blockConcurrencyWhile(async () => {
+			// A fallback before anything can throw: an object whose open or recovery fails is started again.
+			const fallback = Date.now() + 60_000;
+			const current = await ctx.storage.getAlarm();
+			if (current === null || current > fallback) await ctx.storage.setAlarm(fallback);
+			const storage = await openDurableObjectSqliteStorage(ctx.storage);
+			const onWake = (wake: Wake) =>
+				// A failed alarm write resets the object; it arms again when it next starts.
+				void this.#arm(wake).catch(() => ctx.abort("Alarm write failed"));
+			this.#harness = await Harness.open(storage, { models, registry, onWake }, context);
+			// Armed before `resume()` runs anything, as for any call that can start work.
+			await this.#arm(this.#harness.wake());
+			this.#harness.resume(); // work a lost instance left, and due sleeps
+		});
+	}
+
+	override async alarm(): Promise<void> {
+		await this.#arm({ ...this.#harness.wake(), active: true });
+		this.#harness.resume(); // due sleeps and work a lost instance left
+	}
+
+	// Arm before any call that can start work (submit, compact, abortTask, abort, a registry change): `onWake` runs
+	// after the commit. An early alarm is harmless, a missing one strands the work.
+	async submit(conversation: Conversation, input: string, requestId: string): Promise<void> {
+		await this.#arm({ ...this.#harness.wake(), active: true });
+		await conversation.submit({ type: "input", content: input, requestId }, context);
+	}
+
+	async #arm(wake: Wake): Promise<void> {
+		// A recovery heartbeat while work runs, never later than the earliest sleep.
+		const heartbeat = wake.active ? Date.now() + 60_000 : undefined;
+		const at = heartbeat === undefined || wake.at === undefined ? (heartbeat ?? wake.at) : Math.min(heartbeat, wake.at);
+		if (at === undefined) await this.ctx.storage.deleteAlarm();
+		else await this.ctx.storage.setAlarm(at);
+	}
+}
+```
+
+The default `setTimer` declines the timers that only free memory in Workers, so no pending timer keeps the object from hibernating or being evicted; memory is then freed at later commits.
+
+### Failures and Recovery
+
+**Crash loops.** Work that deterministically crashes its process, by exhausting memory or CPU before its next checkpoint, would otherwise be resumed and crash again forever. Open counts each task a crash, eviction, or reset cut off; a close is not counted, and a new state the task commits starts the count over. Once the count reaches `settings.restartLimit` (default 5; `Infinity` never parks), the task is parked: `inspect()` and the task graph show it as blocked with reason `restart_limit`, `wake()` does not count it as active, and `onReport` gets it once as `task_parked`. Every task running when a process dies is counted, so show parked tasks and offer `harness.retryTask(id)`, which runs one again. `abortTask()` still runs its abort handler; an abort handler cut off that many times ends the task `faulted`.
+
+**Reports.** `onReport(error, info)` says what happened in `info.type`: `session_failed` for the error that failed the Harness (a Storage error, often a platform reset); `task_faulted`, `task_parked`, `migration_failed`, `task_outdated`, or `task_error` for a task, with `info.task` (its `id`, `kind`, and `conversationId`) and the extension that installed it in `info.extension`; `extension_error` for hooks, sections, wrappers, and tools, with the extension's name; `host_error` for a host callback, named in `info.callback`; and `listener_error`. A host can feed `task_faulted` reports of one kind to its own breaker.
+
+**Queued inputs after a failed run.** A run that fails with a model error leaves the inputs queued behind it waiting until the next input arrives. `settings.afterFailedRun` changes that: `continue` starts the next run with them, as after an answer, and `withdraw` settles them `unanswered` with reason `run_failed`.
+
+**Blocked tasks.** Tasks blocked on a missing or unmigratable definition show their reason in the task graph too, and a registry change that unblocks them makes `onWake` report the Session active, so a host need not poll them.
+
 ## Extensions
 
 Code the Harness runs, other than its built-in tasks, comes in named extensions installed in a registry your process owns:
@@ -250,6 +334,8 @@ await root.configure({ modelTools: { remove: [bash] } }, context);
 
 `conversation.agent()` resolves both lists: `tools`, offered to the model, and `callable`, which nested calls resolve among. `tools` still decides what is enabled at all; `modelTools` cannot add to it.
 
+A `deferred: true` tool is not offered to the model until it is loaded, though other tools can call it any time. The `tool_search` tool from `@earendil-works/pi-durable/tool-search` (`createToolSearchExtension()`) lets the model search the deferred tools and loads the matches with `control.addTools`, which records them in `modelTools`; loaded tools stay offered on that branch, also after a compaction, and the `codemode` section leaves deferred tools out. Use it for large tool sets, such as an MCP server's.
+
 ### Tasks a restart abandons
 
 A task that its creator awaits only in memory, and that the creator never resumes after a restart, can be created with `abandonOnRestart: true`. When a later Harness starts scheduling and finds it still live, it is aborted with `abortReason: "restart"`, together with everything it owns, before any of it runs again. Nested calls of tools that are not replay-safe get this automatically, and so do the child tasks such a tool creates with `api.createTask()`. A task abandoned this way whose definition is missing waits until its extension is installed, so its abort handler still cleans up. Its caller, and the conversation, wait with it; `harness.inspect()` shows it as blocked. Aborting it then orphans it, as any abort does.
@@ -317,7 +403,7 @@ const harness = await Harness.open(storage, {
 		compaction: { reserveTokens: 16384 },
 		progress: { partialIntervalMs: 100, outputIntervalMs: 100 },
 		toolExecution: "parallel",
-		contextRetentionMs: 600_000, // idle conversations keep their context in memory this long (checked lazily where timers cannot be unreferenced)
+		contextRetentionMs: 600_000, // idle conversations keep their context in memory this long (checked lazily where background timers are declined, as in Workers)
 		documentRetentionMs: 600_000, // loaded documents nothing observes stay in memory this long after their last use; observed ones always
 		get followUpMode() {
 			return userSettings.followUpMode;
@@ -356,6 +442,12 @@ await env.exec(["git", "status", "--porcelain=v2", "-z"], {
 ```
 
 Abort the context to stop one call; `cleanup()` is for shutting the environment down. A custom environment can check itself with `registerEnvConformance()` from `@earendil-works/pi-durable/testing`, like storage below.
+
+Some environments also implement the optional `listFiles()`: the files and directories below a directory at any depth, as `fd` lists them, skipping what git ignores and stopping at bounds with `truncated`. `NodeExecutionEnv` does not; pi-env's `RemoteExecutionEnv` and `LocalExecutionEnv` do. Callers fall back to their own walk when the method is missing or fails with `not_supported`:
+
+```typescript
+const listing = await env.listFiles?.(".", { exclude: ["node_modules"], maxEntries: 50_000 }, context);
+```
 
 ## Reload
 
@@ -469,9 +561,15 @@ settings: {
 		reserveTokens: 16384, // above contextWindow - reserveTokens, the next request waits for a compaction
 		keepRecentTokens: 20000, // roughly how much recent context stays verbatim
 		backgroundTokens: 32768, // this far below that, a compaction starts in the background; 0 disables it
+		modelOverrides: {
+			// exact "provider/modelId"; each field set here replaces the one above for that model
+			"local/small-32k": { reserveTokens: 4096, keepRecentTokens: 8000, backgroundTokens: 4096 },
+		},
 	},
 }
 ```
+
+The fixed token counts rarely suit a 32k and a 1M context window alike; `modelOverrides` lets one harness serve both. The conversation's current model picks the entry, at the threshold check, after a context overflow, and when a compaction selects what to summarize.
 
 When a provider rejects a request because the context is too long, generation compacts and retries once. A summary that would cut before the start of the current context settles as `stale` when it is placed, so when several are in flight, the furthest cut stays in effect. Summarization spend counts in `pi.usage`. A `beforeCompact` hook on `CompactionTask` can decline or supply its own summary.
 
@@ -656,6 +754,23 @@ const usage = await harness.usage(context); // { models: { "openai/gpt-6-sol": U
 | JSONL | `openNodeJsonlStorage(directory, context)` from `@earendil-works/pi-durable/storage/jsonl/node` | Append-only files in one directory. Pass `{ fsync: true }` to flush before each commit marker. Keeps the whole history in memory too, so memory grows with it; use SQLite for long-running agents. |
 | Cloudflare Durable Object | `openDurableObjectSqliteStorage(ctx.storage)` from `@earendil-works/pi-durable/storage/sqlite/cloudflare` | The SQLite storage of one SQLite-backed Durable Object; commits are its storage transactions. |
 
+SQLite storage can namespace its tables and indexes when sharing a database: pass `{ prefix: "pi_" }` to
+`SqliteStorage.open(database, options)`, `openNodeSqliteStorage(path, options)`, or
+`openDurableObjectSqliteStorage(ctx.storage, options)`. Storage renders the prefixed names into its SQL, so adapters
+need no support. A prefix must be a SQLite identifier and cannot begin with `sqlite_`; a host may reserve more, such
+as `_cf_` in Durable Objects. Changing the prefix does not migrate existing data.
+
+Multiple Pi storages opened through the Cloudflare adapter with the same storage object automatically share an
+operation queue. To share the database with host tables, create an adapter and use it for both Pi and all host queries;
+direct storage calls bypass the queue and may be rolled back with a Pi transaction:
+
+```typescript
+const database = new DurableObjectSqliteDatabase(ctx.storage);
+const piStorage = await SqliteStorage.open(database, { prefix: "pi_" });
+await database.exec("CREATE TABLE IF NOT EXISTS host_notes (text TEXT)");
+await database.run("INSERT INTO host_notes (text) VALUES (?)", text);
+```
+
 One process owns a storage at a time; there is no cross-process locking. The portable SQLite and JSONL cores (`/storage/sqlite`, `/storage/jsonl`) run without Node APIs, for example on Bun or in Cloudflare Durable Objects, given an asynchronous `SqliteDatabase` facade or a `FileSystem` from `@earendil-works/pi-durable/env`.
 
 SQLite adapters implement promise-based `exec`, `run`, `get`, `all`, `transaction`, and `close`. `run`, `get`, and `all` take SQL text plus positional bindings; adapters may cache prepared statements by SQL text. A transaction callback receives a transaction handle; all work in the transaction must use it, and the handle expires when the callback settles. Adapters must queue unrelated operations and other transactions until the transaction finishes, so calling `database` itself inside the callback never settles:
@@ -690,7 +805,7 @@ The package root loads TypeBox, because the tool task validates arguments with p
 Three rules decide what an error does:
 
 1. **A storage error ends the Harness.** The call that hit it rejects with the error. Everything after it, and every pending wait, rejects with `SessionFailed` (its `cause` is that error); watches and event streams end with `session_failed`; running tasks get their abort signal; `onReport` gets the error once. The Harness then closes itself. Nothing is retried; a custom storage retries its own transient failures. Reopen to recover: commits are atomic, so the store is consistent, and resubmitting with the same `requestId` finds a submission that was already admitted.
-2. **An invalid request fails only that call:** a storage throws `StorageRequestError` for a bad cursor, an unknown conversation, or history a document does not keep. A read you cancelled fails only itself too.
+2. **An invalid read fails only that call:** a storage read throws `StorageRequestError` for a bad cursor, an unknown conversation, or history a document does not keep. A read you cancelled fails only itself too. The exemption covers reads only: any error from `commit()` or `mintId()`, `StorageRequestError` included, ends the Harness as in rule 1.
 3. **Your code fails only its own unit:** a throwing task phase faults that task, a throwing tool gets an error result, a throwing hook is reported and skipped (`beforeTool` blocks the call), and a throwing commit callback rolls back that commit. Listeners that throw, or return a rejected promise, are reported and the others still run. The exception is a host `RegistryReader` whose `snapshot()` throws: the Harness cannot schedule without it, so it fails the Harness like a storage error.
 
 `harness.closed` settles once the Harness has closed, by `close()` or after a storage error, so a host restarts on failure like this:
@@ -737,8 +852,6 @@ Examples that call OpenAI need `OPENAI_API_KEY`; most use the faux provider othe
 ## Design Documents
 
 - [`docs/spec.md`](https://github.com/earendil-works/pi/blob/main/packages/durable/docs/spec.md): the normative specification
-- [`docs/pico-v5-handoff.md`](https://github.com/earendil-works/pi/blob/main/packages/durable/docs/pico-v5-handoff.md): the implementation plan
-- [`docs/pico-v5-chord-usage.md`](https://github.com/earendil-works/pi/blob/main/packages/durable/docs/pico-v5-chord-usage.md): how the package uses Chord
 
 Benchmarks: `npm run bench:storage`, `npm run bench:storage:memory`, `npm run bench:tool-output`, and `npm run bench:nested-tools`.
 

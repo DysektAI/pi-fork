@@ -53,6 +53,14 @@ export const AgentDoc = defineDoc<AgentState>({
 /** Default `settings.contextRetentionMs`: ten minutes. */
 const DEFAULT_CONTEXT_RETENTION_MS = 600_000;
 
+/** Default `settings.restartLimit`. */
+export const DEFAULT_RESTART_LIMIT = 5;
+
+/** A restart limit as given when it is a number of restarts, `1` or more, rounded down (`Infinity` never parks); else the default. */
+function restartLimit(limit: number | undefined): number {
+	return typeof limit === "number" && limit >= 1 ? Math.floor(limit) : DEFAULT_RESTART_LIMIT;
+}
+
 /** Resolve the host settings: every field over its built-in default, object fields merged. */
 export function resolveSettings(settings: HarnessSettings | undefined): Settings {
 	const extensions = settings?.extensions;
@@ -71,6 +79,8 @@ export function resolveSettings(settings: HarnessSettings | undefined): Settings
 		followUpMode: settings?.followUpMode ?? "one-at-a-time",
 		contextRetentionMs: settings?.contextRetentionMs ?? DEFAULT_CONTEXT_RETENTION_MS,
 		documentRetentionMs: documentRetention(settings?.documentRetentionMs),
+		afterFailedRun: settings?.afterFailedRun ?? "keep",
+		restartLimit: restartLimit(settings?.restartLimit),
 	};
 }
 
@@ -82,23 +92,29 @@ export async function configure(tx: Tx, conversationId: ConversationId, change: 
 
 /**
  * `addTools` of a tool round, applied to `tools` and `modelTools`, so the next request offers the tools: an array gets
- * each name it lacks appended, `{ remove }` loses the names, and an unset filter already lets every tool through, so
- * nothing is written.
+ * each name it lacks appended, and `{ remove }` loses the names. An unset `tools` already enables every tool, so nothing
+ * is written for it. An unset or object `modelTools` also gets each name appended to its `add`, which loads deferred
+ * tools and has no effect for others. By name, without the registry: a tool that is not registered now, such as one of
+ * an MCP server that is reconnecting, is offered once it is again.
  */
 export async function addTools(tx: Tx, conversationId: ConversationId, added: readonly string[]): Promise<void> {
 	const state = await tx.doc(AgentDoc, conversationId);
-	for (const field of ["tools", "modelTools"] as const) {
-		const filter = state[field];
-		if (filter === undefined) continue;
-		if (Array.isArray(filter)) {
-			for (const name of added) if (!filter.includes(name)) filter.push(name);
-		} else {
-			const remove = (filter as { remove: string[] }).remove;
-			if (remove.some((name) => added.includes(name))) {
-				state[field] = { remove: remove.filter((name) => !added.includes(name)) };
-			}
-		}
+	const tools = state.tools;
+	if (Array.isArray(tools)) {
+		for (const name of added) if (!tools.includes(name)) tools.push(name);
+	} else if (tools?.remove.some((name) => added.includes(name))) {
+		state.tools = { remove: tools.remove.filter((name) => !added.includes(name)) };
 	}
+	const modelTools = state.modelTools;
+	if (Array.isArray(modelTools)) {
+		for (const name of added) if (!modelTools.includes(name)) modelTools.push(name);
+		return;
+	}
+	// Assigned whole; a document write of an equal value records no change.
+	const remove = (modelTools?.remove ?? []).filter((name) => !added.includes(name));
+	const add = [...(modelTools?.add ?? [])];
+	for (const name of added) if (!add.includes(name)) add.push(name);
+	state.modelTools = { ...(remove.length === 0 ? {} : { remove }), add };
 }
 
 function applyChange(state: Draft<AgentState>, change: AgentChange): void {
@@ -121,17 +137,23 @@ function applyChange(state: Draft<AgentState>, change: AgentChange): void {
 						...(extensions.remove === undefined ? {} : { remove: names(extensions.remove) }),
 					},
 	);
-	for (const field of ["tools", "modelTools"] as const) {
-		const filter = change[field];
-		set(
-			field,
-			filter === undefined || filter === null
-				? filter
-				: isList(filter)
-					? names(filter)
-					: { remove: names(filter.remove) },
-		);
-	}
+	const tools = change.tools;
+	set(
+		"tools",
+		tools === undefined || tools === null ? tools : isList(tools) ? names(tools) : { remove: names(tools.remove) },
+	);
+	const modelTools = change.modelTools;
+	set(
+		"modelTools",
+		modelTools === undefined || modelTools === null
+			? modelTools
+			: isList(modelTools)
+				? names(modelTools)
+				: {
+						...(modelTools.remove === undefined ? {} : { remove: names(modelTools.remove) }),
+						...(modelTools.add === undefined ? {} : { add: names(modelTools.add) }),
+					},
+	);
 	set("instructions", change.instructions);
 	set("cwd", change.cwd);
 }
@@ -158,12 +180,39 @@ export async function createAgent(tx: Tx, conversation: ConversationRecord): Pro
 }
 
 /** Handlers of the selected extensions' hooks for a task name, in extension order. */
-export function agentHooks(agent: Agent, taskName: string): object[] {
-	const handlers: object[] = [];
+export function agentHooks(
+	agent: Agent,
+	taskName: string,
+): { readonly extension: string; readonly handlers: object }[] {
+	const handlers: { readonly extension: string; readonly handlers: object }[] = [];
 	for (const extension of agent.extensions) {
-		for (const hook of extension.hooks ?? []) if (hook.task === taskName) handlers.push(hook.handlers);
+		for (const hook of extension.hooks ?? []) {
+			if (hook.task === taskName) handlers.push({ extension: extension.name, handlers: hook.handlers });
+		}
 	}
 	return handlers;
+}
+
+/** The extension whose code a section of `agent` runs: the last selected one that provides or wraps it. */
+export function sectionExtension(agent: Agent, key: string): string | undefined {
+	let found: string | undefined;
+	for (const extension of agent.extensions) {
+		const provides = extension.sections?.some((section) => section.key === key) === true;
+		const wraps = extension.wraps?.some((wrap) => "section" in wrap && wrap.section === key) === true;
+		if (provides || wraps) found = extension.name;
+	}
+	return found;
+}
+
+/** The extension whose code a tool of `agent` runs: the last selected one that provides or wraps it. */
+export function toolExtension(agent: Agent, name: string): string | undefined {
+	let found: string | undefined;
+	for (const extension of agent.extensions) {
+		const provides = extension.tools?.some((tool) => tool.name === name) === true;
+		const wraps = extension.wraps?.some((wrap) => "tool" in wrap && wrap.tool === name) === true;
+		if (provides || wraps) found = extension.name;
+	}
+	return found;
 }
 
 /**
@@ -174,7 +223,8 @@ export function resolveAgent<Tool extends ToolRegistration>(
 	state: Readonly<AgentState> | undefined,
 	snapshot: RegistrySnapshot<Tool>,
 	settings: Settings,
-	report: (error: unknown) => void,
+	/** Gets a wrapper's failure with the name of the wrapper's extension. */
+	report: (error: unknown, extension: string) => void,
 ): Agent<Tool> {
 	const extensions = selectExtensions(state?.extensions, snapshot, settings);
 
@@ -186,13 +236,14 @@ export function resolveAgent<Tool extends ToolRegistration>(
 	}
 	for (const extension of extensions) {
 		for (const wrap of extension.wraps ?? []) {
+			const wrapReport = (error: unknown) => report(error, extension.name);
 			if ("tool" in wrap)
 				applyWrap(
 					composed,
 					wrap.tool,
 					(tool) => wrap.wrap(tool),
 					(tool) => tool.name,
-					report,
+					wrapReport,
 				);
 			else
 				applyWrap(
@@ -200,7 +251,7 @@ export function resolveAgent<Tool extends ToolRegistration>(
 					wrap.section,
 					(section) => wrap.wrap(section),
 					(section) => section.key,
-					report,
+					wrapReport,
 				);
 		}
 	}
@@ -208,7 +259,10 @@ export function resolveAgent<Tool extends ToolRegistration>(
 	const enabled = filterTools([...composed.values()], state?.tools);
 	const callableBy = (caller: "model" | "tools") => (tool: Tool) =>
 		tool.callers === undefined || tool.callers.includes(caller);
-	const tools = filterTools(enabled.filter(callableBy("model")), state?.modelTools);
+	const modelCallable = enabled.filter(callableBy("model"));
+	const tools = offeredTools(modelCallable, state?.modelTools);
+	const offered = new Set(tools);
+	const deferred = modelCallable.filter((tool) => tool.deferred === true && !offered.has(tool));
 	const callable = enabled.filter(callableBy("tools"));
 
 	const instructions = state?.instructions;
@@ -221,11 +275,26 @@ export function resolveAgent<Tool extends ToolRegistration>(
 		extensions,
 		tools,
 		callable,
+		deferred,
 		sections: agentSections,
 		...(instructions === undefined ? {} : { instructions }),
 		...(state?.cwd === undefined ? {} : { cwd: state.cwd }),
 	};
 	return agent;
+}
+
+/** The tools offered to the model, as `AgentState.modelTools` describes. */
+function offeredTools<Tool extends ToolRegistration>(tools: Tool[], filter: AgentState["modelTools"]): Tool[] {
+	if (Array.isArray(filter)) return filterTools(tools, filter);
+	const removed = new Set(filter?.remove ?? []);
+	const kept = tools.filter((tool) => tool.deferred !== true && !removed.has(tool.name));
+	// Loaded deferred tools follow in load order, so loading one appends to the declared tools.
+	const byName = new Map(tools.map((tool) => [tool.name, tool]));
+	const loaded = [...new Set(filter?.add ?? [])].flatMap((name) => {
+		const tool = byName.get(name);
+		return tool?.deferred === true && !removed.has(name) ? [tool] : [];
+	});
+	return [...kept, ...loaded];
 }
 
 /** `tools` through a stored filter: an array selects exactly its names, in its order; `{ remove }` drops names. */

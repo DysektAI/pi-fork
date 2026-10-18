@@ -28,7 +28,9 @@ import type {
 	EntryRecord,
 	JsonObject,
 	Page,
+	ReportInfo,
 	Session,
+	SetTimer,
 	SubmissionId,
 	SubmissionRecord,
 	Task,
@@ -136,7 +138,8 @@ export interface ConversationHandle {
 /** Post-tools controls requested by a tool result. */
 export type ToolControl = {
 	readonly addTools?: readonly string[];
-	readonly terminate?: true;
+	/** End the run without another model request when every result of the round sets it to `true`; `false` is a no-op. */
+	readonly terminate?: boolean;
 	readonly handoff?: string;
 };
 
@@ -210,10 +213,12 @@ export interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extend
 	readonly registry: RegistrySnapshot;
 	/** The calling conversation's agent, as the tool task's phase resolved it. */
 	agent(context: Context): Promise<Agent>;
-	/** `HarnessOptions.models`: the catalog, credentials, and request transforms generation uses. */
+	/** The current `HarnessOptions.models`, read at each access: the catalog, credentials, and request transforms. */
 	readonly models: Models;
 	/** Built by `HarnessOptions.env` for this call; `undefined` without an environment. */
 	readonly env: ExecutionEnv | undefined;
+	/** The Harness clock (`HarnessOptions.now`), for times a rerun after a restart compares against. */
+	now(): number;
 	/**
 	 * Append running output; it becomes the result's `output` when the result omits it. `skipped` counts output
 	 * omitted before the chunk, as reported by an environment given `outputWindow` (`ShellOutputInfo.skipped`).
@@ -315,6 +320,11 @@ export type ToolRegistration<
 	 * model is never offered them.
 	 */
 	readonly callers?: readonly ("model" | "tools")[];
+	/**
+	 * Not offered to the model until loaded: the model gets the tool only when `modelTools` names it, in its array or its
+	 * `add`, which `control.addTools` (from a tool such as `tool_search`) writes. Other tools can call it any time.
+	 */
+	readonly deferred?: true;
 	readonly outputLimits?: {
 		readonly maxBytes?: number;
 		readonly maxLines?: number;
@@ -405,10 +415,15 @@ export type AgentState = {
 	/** Filters the selected extensions' tools: the enabled tools. An array enables exactly these, in order. */
 	tools?: string[] | { remove: string[] };
 	/**
-	 * Filters the enabled tools the model may call (`callers` includes `model`): the tools offered to it. An array offers
-	 * exactly these, in order. Never widens: other tools can still call the ones it leaves out.
+	 * Filters the enabled tools the model may call (`callers` includes `model`): the tools offered to it. Never widens:
+	 * other tools can still call the ones it leaves out.
+	 * - Unset: every such tool except deferred ones.
+	 * - An array: exactly these, in order, deferred ones too.
+	 * - An object: every such tool except deferred ones and those in `remove`, in registry order, followed by the
+	 *   deferred tools in `add` that are not in `remove`, in `add` order. Names of tools that are not deferred or not
+	 *   registered have no effect in `add`.
 	 */
-	modelTools?: string[] | { remove: string[] };
+	modelTools?: string[] | { remove?: string[]; add?: string[] };
 	/** Rendered after every extension section, as the section `instructions`. */
 	instructions?: string;
 	/** Directory within the environment's file system, passed to `HarnessOptions.env`. */
@@ -424,7 +439,11 @@ export type AgentChange = {
 		| { readonly add?: readonly Extension[]; readonly remove?: readonly Extension[] }
 		| null;
 	readonly tools?: readonly ToolRegistration[] | { readonly remove: readonly ToolRegistration[] } | null;
-	readonly modelTools?: readonly ToolRegistration[] | { readonly remove: readonly ToolRegistration[] } | null;
+	/** Replaces the stored filter as a whole; tools loaded with `control.addTools` are in its `add`. */
+	readonly modelTools?:
+		| readonly ToolRegistration[]
+		| { readonly remove?: readonly ToolRegistration[]; readonly add?: readonly ToolRegistration[] }
+		| null;
 	readonly instructions?: string | null;
 	readonly cwd?: string | null;
 };
@@ -438,6 +457,8 @@ export type Agent<Tool extends ToolRegistration = ToolRegistration> = {
 	readonly tools: readonly Tool[];
 	/** The tools nested calls (`executeTool()`) resolve among, in order: enabled and callable by tools. */
 	readonly callable: readonly Tool[];
+	/** Enabled deferred tools the model may call and is not offered yet, in registry order: what `tool_search` loads. */
+	readonly deferred: readonly Tool[];
 	/** Extension sections, then `instructions` when set. */
 	readonly sections: readonly PromptSection<Tool>[];
 	readonly instructions?: string;
@@ -491,6 +512,14 @@ export type CompactionPolicy = {
 };
 
 /**
+ * Harness-wide compaction settings. `modelOverrides` is keyed by exact `"provider/modelId"`; each field it sets
+ * replaces the harness-wide one for that model, so small- and large-window models can share a harness.
+ */
+export type CompactionSettings = Partial<CompactionPolicy> & {
+	readonly modelOverrides?: Readonly<Record<string, Partial<CompactionPolicy>>>;
+};
+
+/**
  * How often running progress is committed. Each progress commit is a storage write; a host whose storage is remote can
  * commit less often, so live answers and tool output appear in larger steps.
  */
@@ -516,7 +545,7 @@ export type HarnessSettings = {
 	readonly extensions?: readonly Extension[];
 	readonly stream?: ConversationStreamOptions;
 	readonly retry?: Partial<ConversationRetryPolicy>;
-	readonly compaction?: Partial<CompactionPolicy>;
+	readonly compaction?: CompactionSettings;
 	readonly progress?: Partial<ProgressPolicy>;
 	readonly toolExecution?: ToolExecutionMode;
 	readonly steeringMode?: QueueMode;
@@ -532,7 +561,22 @@ export type HarnessSettings = {
 	 * after use; `Infinity` keeps them. Anything else that is not a number of milliseconds means the default.
 	 */
 	readonly documentRetentionMs?: number;
+	/**
+	 * What a run that fails (`model_error`, `no_model`) does with the inputs queued behind it: `keep` leaves them
+	 * queued until the next input or queued write, `continue` starts the next run with them, as an answer would, and
+	 * `withdraw` settles them `unanswered` with reason `run_failed`. Default `keep`.
+	 */
+	readonly afterFailedRun?: AfterFailedRun;
+	/**
+	 * How many times in a row a task may be cut off by a crash, eviction, or reset (a close does not count) without
+	 * changing its state before it is parked as blocked (`restart_limit`) instead of run again; `Harness.retryTask()`
+	 * runs it again. Default 5; `Infinity` never parks.
+	 */
+	readonly restartLimit?: number;
 };
+
+/** What a failed run does with the inputs queued behind it (`HarnessSettings.afterFailedRun`). */
+export type AfterFailedRun = "keep" | "continue" | "withdraw";
 
 /** Resolved settings: every field over its built-in default, object fields merged. */
 export type Settings = {
@@ -540,13 +584,16 @@ export type Settings = {
 	readonly extensions?: readonly Extension[];
 	readonly stream: ConversationStreamOptions;
 	readonly retry: ConversationRetryPolicy;
-	readonly compaction: CompactionPolicy;
+	/** Harness-wide policy over the defaults; per-model overrides apply where the model is known. */
+	readonly compaction: CompactionPolicy & Pick<CompactionSettings, "modelOverrides">;
 	readonly progress: ProgressPolicy;
 	readonly toolExecution: ToolExecutionMode;
 	readonly steeringMode: QueueMode;
 	readonly followUpMode: QueueMode;
 	readonly contextRetentionMs: number;
 	readonly documentRetentionMs: number;
+	readonly afterFailedRun: AfterFailedRun;
+	readonly restartLimit: number;
 };
 
 /** What `HarnessOptions.env` builds an environment for. */
@@ -558,10 +605,14 @@ export type EnvTarget = {
 };
 
 export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
-	/** pi-ai model access used by generation. */
-	readonly models: Models;
+	/**
+	 * pi-ai model access used by generation, compaction, hooks and tools: a `Models`, or a function returning the current
+	 * one, called at each use, so a host can replace its model configuration without reopening the Harness.
+	 */
+	readonly models: Models | (() => Models);
 	readonly registry: RegistryReader<Tool>;
-	readonly settings?: HarnessSettings;
+	/** Run settings, or a function returning the current ones; read at each use either way. */
+	readonly settings?: HarnessSettings | (() => HarnessSettings | undefined);
 	/** Builds a conversation's environment at each use. Never called on the Session line; may be async. */
 	readonly env?: (target: EnvTarget, context: Context) => ExecutionEnv | undefined | Promise<ExecutionEnv | undefined>;
 	/**
@@ -570,13 +621,45 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	 * Table reads throw `ReadAfterWrite`, as in `init`; a throw fails the creating commit.
 	 */
 	readonly conversationCreated?: (tx: Tx, conversation: ConversationRecord) => void | Promise<void>;
+	/**
+	 * The Harness clock, epoch milliseconds; default `Date.now`. Sleeping tasks store deadlines on it, so every process
+	 * that opens the same storage must use the same clock.
+	 */
 	readonly now?: () => number;
 	/**
-	 * Receives failures that do not fail the calling operation, such as a throwing hook or listener, and the error that
-	 * fails the Session, once. Its own throw or rejection is dropped.
+	 * Arms the timers of the Session, the scheduler, and its tasks: pacing progress commits, freeing idle memory
+	 * (`background`), and, without `onWake`, resuming sleeping tasks; and the timers of `TaskRuntime.setTimer()`. The
+	 * Node.js environment, file watcher, and image worker keep their own timers. Default `setTimeout`, with background
+	 * timers unreferenced, or declined in Cloudflare Workers and where they cannot be unreferenced. Tests can pass fake
+	 * timers; a host can keep timers off a process that should hibernate.
 	 */
-	readonly onReport?: (error: unknown) => void;
+	readonly setTimer?: SetTimer;
+	/**
+	 * Wakes the process for sleeping tasks instead of a `setTimer` timer. Without it, while scheduling runs, a timer that
+	 * keeps the process alive resumes sleeping tasks when they are due. With it, the Harness arms no timer for them: it
+	 * calls `onWake` after open and whenever `Harness.wake()` changes, and the host arms its own wakeup, such as a
+	 * Durable Object alarm, and calls `resume()` when it fires. Called off the Session line, after the commit that
+	 * changed the value, so a host arms a recovery wakeup before calls that can start work. It may call `wake()` and
+	 * `resume()`, and must not block. A throw is reported, and the value is offered again at the next change.
+	 */
+	readonly onWake?: (wake: Wake) => void;
+	/**
+	 * Receives failures that do not fail the calling operation, such as a throwing hook or listener, a task that faulted,
+	 * and the error that fails the Session, once. `info` says what happened: a host can tell a failed Session
+	 * (`session_failed`, often a platform reset) from a faulted task (`task_faulted`) or a parked one (`task_parked`).
+	 * Its own throw or rejection is dropped.
+	 */
+	readonly onReport?: (error: unknown, info: ReportInfo) => void;
 };
+
+/**
+ * When a Session next needs a running process (`Harness.wake()`). `active`: some task can run now or is running, or a
+ * reconcile pass such as open's recovery has not landed yet, so a process that dies must be woken again soon, for
+ * example by a recovery alarm. `at`: the earliest sleep not yet due,
+ * when there is one. Neither: nothing needs a process until new work is submitted. Tasks blocked on a missing or
+ * unmigratable definition, `completing` tasks, and waits on live tasks do not count; the work they wait for does.
+ */
+export type Wake = { readonly active: boolean; readonly at?: number };
 
 /** Live task and what the scheduler would do with it under the current registry. */
 export type TaskInspection = {
@@ -590,12 +673,17 @@ export type TaskInspection = {
 		 * must end before its abort handler starts.
 		 */
 		| { readonly kind: "waiting"; readonly on: readonly TaskId[] }
+		/** Sleeps until the Harness clock reaches `until`. */
+		| { readonly kind: "sleeping"; readonly until: number }
 		/** Outcome held until its ordinary owned work drains. */
 		| { readonly kind: "completing" }
-		/** No registered definition can take it; aborting it settles it as `orphaned`. */
+		/**
+		 * Cannot run here: no registered definition can take it (aborting it settles it as `orphaned`), or it is parked by
+		 * the restart limit (`retryTask()` runs it again).
+		 */
 		| {
 				readonly kind: "blocked";
-				readonly reason: "missing_task" | "task_too_old" | "migration_failed";
+				readonly reason: "missing_task" | "task_too_old" | "migration_failed" | "restart_limit";
 				readonly error?: unknown;
 		  };
 };
@@ -688,6 +776,13 @@ export interface Harness extends Session {
 	 * `Harness.waitForIdle()`, and `Conversation.waitForIdle()`. Read-only viewers never do.
 	 */
 	resume(): void;
+	/**
+	 * When this Session next needs a running process, from the scheduler's memory: `active` while some task can run now
+	 * or is running, `at` for the earliest sleep. Answers also while scheduling is paused. A host that wakes the
+	 * process itself, such as a Durable Object alarm, arms from it and calls `resume()` when woken; see
+	 * `HarnessOptions.onWake`.
+	 */
+	wake(): Wake;
 
 	/** Return the reserved root conversation, creating it with `agent` and `init` in one commit when absent. */
 	root(
@@ -713,6 +808,11 @@ export interface Harness extends Session {
 	 * definition cannot take it settles as `orphaned` instead.
 	 */
 	abortTask(id: TaskId, context: Context): Promise<"marked" | "terminal">;
+	/**
+	 * Run a task parked by `settings.restartLimit` again: clears its restart count and enables scheduling. Does nothing
+	 * for a task that is not parked; rejects for an unknown one.
+	 */
+	retryTask(id: TaskId, context: Context): Promise<void>;
 	/** Resolve with the terminal receipt; cancelling `context` cancels only this wait. */
 	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
 	/** Resolve when the ordinary ownership scope of every ownerless conversation has no live non-background task. */
@@ -729,7 +829,7 @@ export interface Harness extends Session {
 export interface HookApi extends DocumentReader {
 	readonly taskId: TaskId;
 	readonly conversationId: ConversationId;
-	/** `HarnessOptions.models`. */
+	/** The current `HarnessOptions.models`, read at each access. */
 	readonly models: Models;
 	memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
 	memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
