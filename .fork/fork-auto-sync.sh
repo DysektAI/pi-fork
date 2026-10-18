@@ -53,9 +53,17 @@ cd "$REPO_ROOT" || { echo "$(ts) cannot cd to $REPO_ROOT" >> "$LOG"; exit 1; }
 
 # Resolve the canonical fork-sync.sh from feat/fork-tooling so this works no
 # matter which branch is checked out (same pattern fork-sync.sh uses itself).
+# Falls back to origin/feat/fork-tooling when no local branch exists.
 sync_tmp="$(mktemp)"
-if ! git show feat/fork-tooling:fork-sync.sh > "$sync_tmp" 2>>"$LOG"; then
-	echo "$(ts) ERROR: could not read fork-sync.sh from feat/fork-tooling" >> "$LOG"
+sync_ok=0
+for sync_ref in feat/fork-tooling origin/feat/fork-tooling; do
+	if git show "${sync_ref}:fork-sync.sh" > "$sync_tmp" 2>/dev/null; then
+		sync_ok=1
+		break
+	fi
+done
+if [[ "$sync_ok" -ne 1 ]]; then
+	echo "$(ts) ERROR: could not read fork-sync.sh from feat/fork-tooling or origin/feat/fork-tooling" >> "$LOG"
 	rm -f "$sync_tmp"
 	exit 1
 fi

@@ -52,9 +52,14 @@ if [[ -f "$DRIVER_SRC" ]]; then
 	cp "$DRIVER_SRC" "$DRIVER_DST"
 elif [[ ! -f "$DRIVER_DST" ]]; then
 	# Not on a branch that carries .fork/; recover the script from feat/fork-tooling.
-	if git cat-file -e feat/fork-tooling:.fork/changelog-merge.py 2>/dev/null; then
-		git show feat/fork-tooling:.fork/changelog-merge.py > "$DRIVER_DST"
-	else
+	for DRIVER_REF in feat/fork-tooling origin/feat/fork-tooling; do
+		if git cat-file -e "${DRIVER_REF}:.fork/changelog-merge.py" 2>/dev/null \
+			&& git show "${DRIVER_REF}:.fork/changelog-merge.py" > "$DRIVER_DST"; then
+			break
+		fi
+		rm -f "$DRIVER_DST"
+	done
+	if [[ ! -f "$DRIVER_DST" ]]; then
 		warn "Cannot locate .fork/changelog-merge.py; CHANGELOG auto-merge disabled."
 	fi
 fi

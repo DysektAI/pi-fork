@@ -47,12 +47,26 @@ set -euo pipefail
 # (e.g. on feat/fork-tooling or local), otherwise extracted from the canonical
 # feat/fork-tooling branch. This keeps the script correct no matter which branch
 # is checked out when it starts.
+# Canonical tooling ref: the local feat/fork-tooling branch when present,
+# otherwise its remote-tracking ref (fresh clones and pruned checkouts only
+# have origin/feat/fork-tooling).
+resolve_tooling_ref() {
+	local ref
+	for ref in feat/fork-tooling origin/feat/fork-tooling; do
+		if git rev-parse --verify -q "${ref}^{commit}" >/dev/null; then
+			printf '%s' "$ref"
+			return 0
+		fi
+	done
+	return 1
+}
+
 resolve_manifest() {
 	if [[ -f .fork/fork-manifest.json ]]; then
 		MANIFEST=".fork/fork-manifest.json"
-	elif git cat-file -e feat/fork-tooling:.fork/fork-manifest.json 2>/dev/null; then
+	elif [[ -n "$TOOLING_REF" ]] && git cat-file -e "$TOOLING_REF:.fork/fork-manifest.json" 2>/dev/null; then
 		MANIFEST="$(mktemp)"
-		git show feat/fork-tooling:.fork/fork-manifest.json > "$MANIFEST"
+		git show "$TOOLING_REF:.fork/fork-manifest.json" > "$MANIFEST"
 		MANIFEST_IS_TEMP=1
 	else
 		echo "fork-sync: cannot locate .fork/fork-manifest.json" >&2
@@ -174,16 +188,17 @@ else
 	REPO_ROOT="$(cd "$(dirname "$0")" && git rev-parse --show-toplevel)"
 fi
 cd "$REPO_ROOT"
+TOOLING_REF="$(resolve_tooling_ref || true)"
 
 # Self-update guard: the canonical fork-sync.sh + .fork tooling live on
 # feat/fork-tooling. Whichever branch you launch from, re-exec the canonical
 # version so a fix on feat/fork-tooling takes effect immediately (avoids the
 # bootstrap problem where `local` still carries an older script). The re-exec
 # stays anchored to the repo via FORK_SYNC_ROOT and cleans its temp copy.
-if [[ "${FORK_SYNC_REEXEC:-0}" -ne 1 ]] && git rev-parse --verify -q feat/fork-tooling >/dev/null; then
-	canonical="$(git show feat/fork-tooling:fork-sync.sh 2>/dev/null || true)"
+if [[ "${FORK_SYNC_REEXEC:-0}" -ne 1 && -n "$TOOLING_REF" ]]; then
+	canonical="$(git show "$TOOLING_REF:fork-sync.sh" 2>/dev/null || true)"
 	if [[ -n "$canonical" && "$canonical" != "$(cat "$REPO_ROOT/fork-sync.sh" 2>/dev/null)" ]]; then
-		warn "Running canonical fork-sync.sh from feat/fork-tooling (self-update)."
+		warn "Running canonical fork-sync.sh from $TOOLING_REF (self-update)."
 		tmp="$(mktemp)"
 		printf '%s' "$canonical" > "$tmp"
 		chmod +x "$tmp"
@@ -213,11 +228,11 @@ fi
 say "Ensuring fork git config is installed (merge driver + rerere)"
 if [[ -x .fork/setup-fork.sh ]]; then
 	./.fork/setup-fork.sh >/dev/null
-elif git cat-file -e feat/fork-tooling:.fork/setup-fork.sh 2>/dev/null; then
+elif [[ -n "$TOOLING_REF" ]] && git cat-file -e "$TOOLING_REF:.fork/setup-fork.sh" 2>/dev/null; then
 	# Working tree lacks .fork (e.g. launched from a branch without it): run the
 	# canonical setup from feat/fork-tooling via a temp checkout of the .fork dir.
 	_setup_tmp="$(mktemp -d)"
-	git archive feat/fork-tooling .fork | tar -x -C "$_setup_tmp"
+	git archive "$TOOLING_REF" .fork | tar -x -C "$_setup_tmp"
 	( cd "$REPO_ROOT" && bash "$_setup_tmp/.fork/setup-fork.sh" >/dev/null ) || \
 		warn "setup-fork.sh failed; CHANGELOG auto-merge may not be active."
 	rm -rf "$_setup_tmp"
@@ -238,9 +253,9 @@ if [[ "$DO_DRIFT" -eq 1 ]]; then
 	drift_tmp=""
 	if [[ -f .fork/fork-drift-check.py ]]; then
 		drift_script=".fork/fork-drift-check.py"
-	elif git cat-file -e feat/fork-tooling:.fork/fork-drift-check.py 2>/dev/null; then
+	elif [[ -n "$TOOLING_REF" ]] && git cat-file -e "$TOOLING_REF:.fork/fork-drift-check.py" 2>/dev/null; then
 		drift_tmp="$(mktemp)"
-		git show feat/fork-tooling:.fork/fork-drift-check.py > "$drift_tmp"
+		git show "$TOOLING_REF:.fork/fork-drift-check.py" > "$drift_tmp"
 		drift_script="$drift_tmp"
 	fi
 	if [[ -n "$drift_script" ]]; then
