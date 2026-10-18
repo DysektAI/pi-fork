@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../src/utils/clipboard-command.ts", () => ({ runClipboardCommand: mocks.command }));
 vi.mock("@earendil-works/pi-tui", () => ({ getNativeClipboard: mocks.getNativeClipboard }));
+// Detect WSL from env only so tests behave the same when run inside WSL.
+vi.mock("../src/utils/wsl.ts", () => ({
+	isWSL: (env: NodeJS.ProcessEnv = process.env) => Boolean(env.WSL_DISTRO_NAME || env.WSLENV),
+}));
 
 function commandResult(stdout: Buffer, status = 0): Buffer | undefined {
 	return status === 0 ? stdout : undefined;
