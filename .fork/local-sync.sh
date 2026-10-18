@@ -78,9 +78,11 @@ else
 	fi
 fi
 
-# 5. Hydrate deps if the lockfile changed (ignore-scripts per fork AGENTS.md).
-if ! npm install --ignore-scripts --no-audit --no-fund >>"$LOG" 2>&1; then
-	log "ERROR: npm install failed"
+# 5. Hydrate deps from the lockfile (ignore-scripts per fork AGENTS.md). `npm ci`
+#    never rewrites package-lock.json; `npm install` can, which dirties the tree
+#    and makes the next run abort at step 2.
+if ! npm ci --ignore-scripts --no-audit --no-fund >>"$LOG" 2>&1; then
+	log "ERROR: npm ci failed"
 	exit 1
 fi
 
