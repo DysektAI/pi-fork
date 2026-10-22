@@ -157,7 +157,8 @@ describe("Radius OAuth", () => {
 					const callback = new URL(authorize.searchParams.get("redirect_uri") ?? "");
 					callback.searchParams.set("code", "browser-code");
 					callback.searchParams.set("state", authorize.searchParams.get("state") ?? "");
-					callbackPage = nativeFetch(callback);
+					// Each attempt opens a new callback server; do not reuse a pooled socket from the closed one.
+					callbackPage = nativeFetch(callback, { headers: { connection: "close" } });
 				},
 			});
 			const outcome = await result.then(

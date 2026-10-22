@@ -29,6 +29,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { MINIMUM_PI_VERSION } from "./model-catalog-minimum-version.mjs";
+import { archiveReleaseSource } from "./model-catalog-release-source.mjs";
 import { compareModelCatalogPiVersions } from "./model-catalog-protocol.ts";
 
 const PI_AI_PACKAGE = "@earendil-works/pi-ai";
@@ -61,6 +62,7 @@ function mergeReleaseCatalog(builtin, catalog) {
 	return merged;
 }
 
+/** Run the release toolchain and surface both process startup and exit failures. */
 function run(command, args, cwd) {
 	const result = spawnSync(command, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 	if (result.error) throw result.error;
@@ -71,6 +73,7 @@ function run(command, args, cwd) {
 	return result.stdout;
 }
 
+/** Compile the candidate against the latest eligible release, failing on any source or type-check error. */
 function main() {
 	const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 	const { values } = parseArgs({ options: { catalog: { type: "string" } } });
@@ -90,7 +93,7 @@ function main() {
 		console.log(`Checking the model catalog against pi ${release}...`);
 		// The release's source code.
 		const archive = join(temporaryDir, "release.tar");
-		run("git", ["archive", "--prefix=release/", "--output", archive, `v${release}`], root);
+		archiveReleaseSource(release, archive, temporaryDir, root, run);
 		run("tar", ["xf", archive, "-C", temporaryDir], root);
 
 		// The built-in models users have: the data shipped in the published package.

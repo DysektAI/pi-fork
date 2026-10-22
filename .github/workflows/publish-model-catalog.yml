@@ -15,6 +15,7 @@ on:
       - 'scripts/check-model-catalog-compat.mjs'
       - 'scripts/model-catalog-minimum-version.mjs'
       - 'scripts/model-catalog-protocol.ts'
+      - 'scripts/model-catalog-release-source*.mjs'
       - 'scripts/publish-model-catalog.mjs'
   # GitHub schedules use UTC. Run hourly candidates across the CET/CEST
   # boundaries; the publish job only uploads at 10:17, 12:17, and 14:17
@@ -49,7 +50,7 @@ jobs:
         with:
           ref: ${{ env.SOURCE_REF }}
           persist-credentials: false
-          # The compatibility check reads the latest release's source from its git tag.
+          # Keep catalogue source history; the compatibility helper fetches upstream releases separately.
           fetch-depth: 0
 
       - name: Setup Node.js

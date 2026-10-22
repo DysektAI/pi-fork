@@ -29,7 +29,7 @@ export const defaultModelPerProvider: Partial<Record<KnownProvider, string>> = {
 	deepseek: "deepseek-v4-pro",
 	google: "gemini-3.1-pro-preview",
 	"google-vertex": "gemini-3.1-pro-preview",
-	"github-copilot": "gpt-5.4",
+	"github-copilot": "gpt-6.1-sol",
 	openrouter: "moonshotai/kimi-k2.6",
 	"vercel-ai-gateway": "zai/glm-5.1",
 	xai: "grok-4.7",
@@ -554,7 +554,7 @@ export interface InitialModelResult {
 /**
  * Find the initial model to use based on priority:
  * 1. First model from scoped models (if not continuing/resuming)
- * 2. Saved default from settings
+ * 2. Saved default from settings when still available
  * 3. First available model with valid API key
  */
 export async function findInitialModel(options: {
@@ -590,9 +590,11 @@ export async function findInitialModel(options: {
 		};
 	}
 
-	// 2. Try saved default from settings if auth is configured.
+	// 2. Try saved defaults only among authenticated, available models.
 	if (defaultProvider && defaultModelId) {
-		const found = modelRuntime.getModel(defaultProvider, defaultModelId);
+		const found = modelRuntime
+			.getAvailableSnapshot()
+			.find((candidate) => candidate.provider === defaultProvider && candidate.id === defaultModelId);
 		if (found && modelRuntime.hasConfiguredAuth(found.provider)) {
 			model = found;
 			const perModel = modelThinkingLevels?.[`${defaultProvider}/${defaultModelId}`];
