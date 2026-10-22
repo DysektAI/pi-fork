@@ -813,7 +813,12 @@ export async function main(args: string[], options?: MainOptions) {
 		const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
 		const scopedModels =
 			modelPatterns && modelPatterns.length > 0
-				? await resolveModelScope(modelPatterns, modelRuntime, { signal: AbortSignal.timeout(15_000) })
+				? await resolveModelScope(
+						modelPatterns,
+						modelRuntime,
+						{ signal: AbortSignal.timeout(15_000) },
+						parsed.models === undefined ? "settings" : "cli",
+					)
 				: [];
 		const {
 			options: sessionOptions,

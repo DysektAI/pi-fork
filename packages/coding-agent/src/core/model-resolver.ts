@@ -425,14 +425,29 @@ export async function resolveModelScopeWithDiagnostics(
 	return resolveModelScopeFromModels(patterns, await modelRuntime.getAvailable(undefined, options));
 }
 
+/** Keep CLI diagnostics detailed; aggregate only unmatched entries from persisted settings. */
 export async function resolveModelScope(
 	patterns: string[],
 	modelRuntime: ModelRuntime,
 	options?: AuthOperationOptions,
+	source: "cli" | "settings" = "cli",
 ): Promise<ScopedModel[]> {
 	const { scopedModels, diagnostics } = await resolveModelScopeWithDiagnostics(patterns, modelRuntime, options);
+	let noMatchCount = 0;
 	for (const diagnostic of diagnostics) {
+		if (source === "settings" && diagnostic.code === "no-match") {
+			noMatchCount++;
+			continue;
+		}
 		console.warn(chalk.yellow(`Warning: ${diagnostic.message}`));
+	}
+	if (noMatchCount > 0) {
+		const entries = noMatchCount === 1 ? "entry does" : "entries do";
+		console.warn(
+			chalk.yellow(
+				`Warning: ${noMatchCount} enabledModels ${entries} not match available models. Use /scoped-models or edit enabledModels in settings.json to update the list.`,
+			),
+		);
 	}
 	return scopedModels;
 }
