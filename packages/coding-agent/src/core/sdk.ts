@@ -212,6 +212,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
 
 	let model = options.model;
+	// Populate current availability for supplied runtimes before any automatic model selection.
+	if (!model) await modelRuntime.getAvailable();
 	let modelFallbackMessage: string | undefined;
 
 	// Assistant messages name the physical model that answered, so a virtual selection is only in
