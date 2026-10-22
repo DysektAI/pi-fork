@@ -62,6 +62,7 @@ function mergeReleaseCatalog(builtin, catalog) {
 	return merged;
 }
 
+/** Run the release toolchain and surface both process startup and exit failures. */
 function run(command, args, cwd) {
 	const result = spawnSync(command, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 	if (result.error) throw result.error;
