@@ -1395,7 +1395,7 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe("GitHub Copilot Provider (gpt-5.3-codex via OpenAI Completions)", () => {
+	describe("GitHub Copilot Provider (gpt-5.3-codex via OpenAI Responses)", () => {
 		const llm = getModel("github-copilot", "gpt-5.3-codex");
 
 		it.skipIf(!githubCopilotToken)("should complete basic text generation", { retry: 3 }, async () => {
@@ -1411,12 +1411,12 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it.skipIf(!githubCopilotToken)("should handle thinking", { retry: 2 }, async () => {
-			const thinkingModel = getModel("github-copilot", "gpt-5-mini");
+			const thinkingModel = getModel("github-copilot", "gpt-6-luna");
 			await handleThinking(thinkingModel, { apiKey: githubCopilotToken, reasoningEffort: "high" });
 		});
 
 		it.skipIf(!githubCopilotToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			const thinkingModel = getModel("github-copilot", "gpt-5-mini");
+			const thinkingModel = getModel("github-copilot", "gpt-6-luna");
 			await multiTurn(thinkingModel, { apiKey: githubCopilotToken, reasoningEffort: "high" });
 		});
 
