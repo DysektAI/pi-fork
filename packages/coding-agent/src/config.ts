@@ -698,19 +698,30 @@ export type InstallChange = { kind: "updated"; version: string } | { kind: "remo
  * Detect that the package this process runs from changed on disk, for example after `pi update`
  * in another terminal. Code loaded on demand can then be missing or from another version.
  *
- * Checks the package.json read at startup. Resolving it again would walk up past a deleted install
- * and could find an unrelated package.json, such as one in the home directory.
+ * Checks the package.json and fork version marker at their startup paths. Resolving them again
+ * could walk past a deleted install and find unrelated metadata. Each version is compared with its
+ * own startup value: fork display versions contain +local.N metadata absent from package.json.
  */
 export function detectInstallChange(packageJsonPath = startupPackageJsonPath): InstallChange | undefined {
 	// The Bun binary embeds its code, so replacing the executable does not affect this process.
 	if (isBunBinary || !packageJsonPath) return undefined;
-	let installed: PackageJson;
+	let installed: PackageJson | null;
 	try {
-		installed = JSON.parse(stripBom(readFileSync(packageJsonPath, "utf-8"))) as PackageJson;
+		installed = JSON.parse(stripBom(readFileSync(packageJsonPath, "utf-8"))) as PackageJson | null;
 	} catch (error) {
 		return (error as NodeJS.ErrnoException).code === "ENOENT" ? { kind: "removed" } : undefined;
 	}
-	return installed.version && installed.version !== VERSION
+	if (sourceVersionPath && sourceVersion) {
+		try {
+			const installedSourceVersion = readFileSync(join(sourceVersionPath, ".fork", "local-version"), "utf-8").trim();
+			if (installedSourceVersion && installedSourceVersion !== sourceVersion) {
+				return { kind: "updated", version: installedSourceVersion };
+			}
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "removed" };
+		}
+	}
+	return typeof installed?.version === "string" && installed.version.trim() && installed.version !== pkg.version
 		? { kind: "updated", version: installed.version }
 		: undefined;
 }
