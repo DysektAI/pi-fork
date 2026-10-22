@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@earendil-works/pi-agent-core";
@@ -756,6 +756,35 @@ describe("default model selection", () => {
 		});
 		expect(saved.model).toBe(savedModel);
 		expect(saved.thinkingLevel).toBe("high");
+	});
+
+	// #42: The declared default must also survive Copilot's credential-backed account model filtering.
+	test("Copilot OAuth availability exposes the supported default without bypassing account allowlists", async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "pi-copilot-default-"));
+		const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network is disabled in this test"));
+		try {
+			for (const allowedModelIds of [["gpt-5.3-codex", "gpt-6.1-sol"], ["gpt-5.3-codex"]]) {
+				const authStorage = AuthStorage.inMemory({
+					"github-copilot": {
+						type: "oauth",
+						access: "copilot-fixture-access",
+						refresh: "copilot-fixture-refresh",
+						expires: Date.now() + 3_600_000,
+						availableModelIds: allowedModelIds,
+					},
+				});
+				const modelRuntime = getModelRuntime(await createModelRegistry(authStorage, join(tempDir, "models.json")));
+				const available = await modelRuntime.getAvailable();
+				expect(available.every((model) => model.provider === "github-copilot")).toBe(true);
+				expect(available.map((model) => model.id).sort()).toEqual([...allowedModelIds].sort());
+				const result = await findInitialModel({ scopedModels: [], isContinuing: false, modelRuntime });
+				expect(result.model?.id).toBe(allowedModelIds.includes("gpt-6.1-sol") ? "gpt-6.1-sol" : "gpt-5.3-codex");
+			}
+			expect(network).not.toHaveBeenCalled();
+		} finally {
+			network.mockRestore();
+			rmSync(tempDir, { recursive: true, force: true });
+		}
 	});
 
 	// #42: Restoring a retired model must use the supported provider default.

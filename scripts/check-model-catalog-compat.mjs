@@ -29,6 +29,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { MINIMUM_PI_VERSION } from "./model-catalog-minimum-version.mjs";
+import { archiveReleaseSource } from "./model-catalog-release-source.mjs";
 import { compareModelCatalogPiVersions } from "./model-catalog-protocol.ts";
 
 const PI_AI_PACKAGE = "@earendil-works/pi-ai";
@@ -90,7 +91,7 @@ function main() {
 		console.log(`Checking the model catalog against pi ${release}...`);
 		// The release's source code.
 		const archive = join(temporaryDir, "release.tar");
-		run("git", ["archive", "--prefix=release/", "--output", archive, `v${release}`], root);
+		archiveReleaseSource(release, archive, temporaryDir, root, run);
 		run("tar", ["xf", archive, "-C", temporaryDir], root);
 
 		// The built-in models users have: the data shipped in the published package.
