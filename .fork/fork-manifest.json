@@ -117,7 +117,7 @@
     },
     {
       "branch": "feat/fork-release-channel",
-      "summary": "Verified fork source checkouts follow DysektAI/pi-fork GitHub releases for version checks, and `pi update --self` fast-forwards the checkout to origin/local and rebuilds (config.ts, version-check.ts, package-manager-cli.ts, release changelog URL). See FORK.md 'Releases and self-update'.",
+      "summary": "Verified fork source checkouts follow DysektAI/pi-fork GitHub releases for version checks, and `pi update --self` fast-forwards the checkout to origin/local and rebuilds. Running-session install checks compare package and fork versions against their own startup values (config.ts, version-check.ts, package-manager-cli.ts, release changelog URL). See FORK.md 'Releases and self-update'.",
       "base": "local",
       "mergeIntoLocal": true,
       "drift": {
