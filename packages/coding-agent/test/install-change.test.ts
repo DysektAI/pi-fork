@@ -142,7 +142,7 @@ describe("install change detection from startup metadata", () => {
 		expect(probeInstallChange("1.3.0+local.4", 'writeFileSync(packageJsonPath, "{");').change).toBeNull();
 	});
 
-	test.each(["{}", "null", '{"version":""}', '{"version":123}'])(
+	test.each(["{}", "null", '{"version":""}', '{"version":"   "}', '{"version":"\\t\\n"}', '{"version":123}'])(
 		"does not infer an update from invalid package metadata: %s",
 		(contents) => {
 			const result = probeInstallChange(

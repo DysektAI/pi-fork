@@ -721,7 +721,7 @@ export function detectInstallChange(packageJsonPath = startupPackageJsonPath): I
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "removed" };
 		}
 	}
-	return typeof installed?.version === "string" && installed.version && installed.version !== pkg.version
+	return typeof installed?.version === "string" && installed.version.trim() && installed.version !== pkg.version
 		? { kind: "updated", version: installed.version }
 		: undefined;
 }
