@@ -11,6 +11,7 @@ import { archiveReleaseSource } from "./model-catalog-release-source.mjs";
 const release = "1.4.0";
 const repository = "https://github.com/earendil-works/pi.git";
 
+/** Build isolated fork/upstream fixtures; URL rewriting and file-only Git prohibit live test fetches. */
 function fixture(t, { localTag = false, upstreamTag = true } = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "pi-release-source-test-"));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -36,6 +37,7 @@ function fixture(t, { localTag = false, upstreamTag = true } = {}) {
 		GIT_COMMITTER_NAME: "Release source test",
 		GIT_COMMITTER_EMAIL: "release-source@example.invalid",
 	};
+	/** Run with synthetic Git identity and surface both process startup and exit failures. */
 	const run = (command, args, cwd) => {
 		const result = spawnSync(command, args, { cwd, env, encoding: "utf8" });
 		if (result.error) throw result.error;

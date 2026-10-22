@@ -72,6 +72,7 @@ function run(command, args, cwd) {
 	return result.stdout;
 }
 
+/** Compile the candidate against the latest eligible release, failing on any source or type-check error. */
 function main() {
 	const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 	const { values } = parseArgs({ options: { catalog: { type: "string" } } });
