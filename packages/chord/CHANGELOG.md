@@ -2,8 +2,28 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `traceIn(options, fn, context)` takes the context last (was `traceIn(context, options, fn)`), like the rest of the API.
+
 ### Added
 
+- `NativeWatchable<T>`: an in-process value that changes and can be watched (`value`, `watch(context)` returning a `NativeWatchHandle<T>`), the in-process counterpart of `Watchable<T>`.
+- `WatchHandle<T>` and `WatchEnd`, the one watch API, moved from Durable: a serialized exact-frame observation with `value`, `start(listener)`, `stop()`, and `closed`. `WatchEnd` reasons are `stopped`, `cancelled`, `retired`, `ended`, `listener_error`, and `failed`.
+- `Watch<T>`, the one watch handle implementation, moved from Durable: a source creates one per watch and feeds it with `advance(value, ops, context)`, `retire(context)` (last frame `[["r", null]]`, then `retired`), `end()` or `end({ error })`, and `observeCancellation(signal)`. More than 100 undelivered frames collapse to one root replacement `[["r", newest]]`; termination drops the listener and every reference into the source.
+- `Watchable<T>`: a value that changes and can be watched (`value`, `watch(context)` returning a `WatchHandle<T>`), the common interface of documents, derives and other observable values.
+- `NativeWatchHandle<T>` and its implementation `NativeWatch<T>`: the same lifecycle for in-process values, with listener `(value, context)` and no ops; an overflow collapses to the newest value.
+
+## [1.4.0] - 2026-10-21
+
+### Breaking Changes
+
+- Custom `Context` implementations must provide `telemetry: TelemetrySpan`; use the no-op span `NOOP_TELEMETRY_CONTEXT` when disabled. `withTelemetry()` accepts spans, not adapters.
+
+### Added
+
+- `@earendil-works/chord/telemetry-sqlite`: portable SQLite telemetry recording with bounded settled-span queues, ten-second metric aggregates, periodic flushes, and retention cleanup.
+- `Context.telemetry` is an explicit, non-optional telemetry parent (no-op by default). `withTelemetry(telemetry, context)` derives it without changing values or cancellation; `traceIn(context, options, fn)` starts a child span and passes its derived context to the callback.
 - `@earendil-works/chord/sqlite`: portable SQLite interfaces, atomic migration runner, and schema-prefix validation, with Node (`/sqlite/node`) and Cloudflare Durable Object (`/sqlite/cloudflare`) drivers. Moved from Durable, which keeps its storage implementations and re-exports the moved public names.
 - `@earendil-works/chord/output`: `Progress` takes an optional `ProgressClock` (`now`, `setTimer`) to pace commits on, by default `Date.now` and `setTimeout`.
 

@@ -54,7 +54,7 @@ Fork patches that belong upstream are proposed, not merged locally and forgotten
 - Always ask before removing functionality or code that appears intentional.
 - Do not preserve backward compatibility unless the user asks for it.
 - Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
-- Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes.
+- Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes. The generated model data in `packages/ai/src/providers/data/` is gitignored: never stage it, and don't look for it in git history.
 
 ## Commands
 
@@ -142,7 +142,7 @@ Rules:
 
 - All new entries go under `## [Unreleased]`. Read the full section first and append to existing subsections; never duplicate them.
 - Released version sections (e.g. `## [0.12.2]`) are immutable; never modify them.
-- Do not create changelog entries when working on a branch other than `main` or pull request
+- Do not create changelog entries when the work targets a branch other than `main`
 
 Attribution:
 

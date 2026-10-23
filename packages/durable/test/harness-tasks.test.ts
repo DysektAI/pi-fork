@@ -1,5 +1,5 @@
 import type { Context } from "@earendil-works/chord";
-import { withCancel } from "@earendil-works/chord/context";
+import { withAbortSignal, withCancel } from "@earendil-works/chord/context";
 import { createModels, Type } from "@earendil-works/pi-ai";
 import {
 	type Conversation,
@@ -79,7 +79,7 @@ async function markDurably(
 }
 
 function withSignal(signal: AbortSignal): Context {
-	return { ...context, abortSignal: signal };
+	return withAbortSignal(signal, context);
 }
 
 describe("task phases", () => {
@@ -187,6 +187,7 @@ describe("task phases", () => {
 
 	it("commits results with entries atomically, keeps memos until terminal, and retires task documents", async () => {
 		const Progress = defineDoc<{ lines: string[] }>({
+			checkpointWhen: () => false,
 			kind: "test.task-progress",
 			version: 1,
 			scope: "task",
@@ -521,6 +522,7 @@ describe("task phases", () => {
 describe("task runtime", () => {
 	it("rejects runtime operations after the invocation ends and stops its watches", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.task-notes",
 			version: 1,
 			scope: "session",
@@ -530,6 +532,7 @@ describe("task runtime", () => {
 		let watchClosed: Promise<unknown> | undefined;
 		const delivered: string[] = [];
 		const Absent = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.task-absent",
 			version: 1,
 			scope: "session",
@@ -578,6 +581,7 @@ describe("task runtime", () => {
 
 	it("reads committed documents and context through the runtime, and forwards the clock and reports", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.runtime-notes",
 			version: 1,
 			scope: "conversation",
@@ -653,6 +657,7 @@ describe("task runtime", () => {
 
 	it("stops a watch whose acquisition finishes after the invocation ended", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.late-watch",
 			version: 1,
 			scope: "session",
@@ -1164,6 +1169,7 @@ describe("task close", () => {
 
 	it("seals admission before signalling handlers and stops watches before joining them", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.close-notes",
 			version: 1,
 			scope: "session",
@@ -1192,7 +1198,7 @@ describe("task close", () => {
 		await reached.promise;
 		await harness.close(context);
 		await expect(fromListener).rejects.toThrow("closed");
-		expect(watchEnd).toEqual({ reason: "session_closed" });
+		expect(watchEnd).toEqual({ reason: "ended" });
 	});
 
 	it("writes no fault when close seals while the step after a failed phase is queued", async () => {

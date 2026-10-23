@@ -1,5 +1,9 @@
 import { Type } from "typebox";
 import type { ProviderHeaders, ProviderStreams, StreamOptions, Tool, TranscriptContext } from "../types.ts";
+import { formatOpenCodeSessionId } from "../utils/identity.ts";
+
+export { formatOpenCodeSessionId } from "../utils/identity.ts";
+
 import { getCurrentTools, normalizeContext } from "../utils/transcript.ts";
 import { uuidv7 } from "../utils/uuid.ts";
 
@@ -13,7 +17,6 @@ import { uuidv7 } from "../utils/uuid.ts";
 export const OPENCODE_CLIENT_USER_AGENT = "opencode/1.18.31 (pi coding agent)";
 
 const OPENCODE_SESSION_HEADER = "x-opencode-session";
-const OPENCODE_SESSION_PATTERN = /^ses_[0-9a-f]{12}[a-z0-9]{14}$/;
 
 /**
  * OpenCode Zen's free-tier gate rejects requests that declare fewer than two
@@ -38,32 +41,6 @@ const COMPAT_TOOLS: Tool[] = [
 /** Tool names the Zen gate recognizes as coding tools (verified by probe). */
 const ZEN_RECOGNIZED_TOOL_NAMES = ["bash", "edit", "find", "glob", "grep", "ls", "powershell", "read", "write"];
 const ZEN_MIN_RECOGNIZED_TOOLS = 2;
-
-/**
- * Shape a conversation id like OpenCode's own session ids: `ses_` + 12 lowercase hex
- * + 14 alphanumeric characters. The Zen free-tier gate rejects other shapes, so pi's
- * session ids are mapped deterministically to keep per-conversation routing stable.
- * Ids that already carry the shape pass through unchanged.
- */
-export function formatOpenCodeSessionId(sessionId: string): string {
-	if (OPENCODE_SESSION_PATTERN.test(sessionId)) return sessionId;
-	const hex = sessionId.toLowerCase().replace(/[^0-9a-f]/g, "");
-	if (hex.length >= 26) return `ses_${hex.slice(0, 26)}`;
-	return `ses_${hashHex(sessionId)}`;
-}
-
-/** Deterministic 26 lowercase hex characters from FNV-1a blocks for non-hex session ids. */
-function hashHex(input: string): string {
-	let out = "";
-	for (let block = 0; out.length < 26; block++) {
-		let hash = 0x811c9dc5 ^ block;
-		for (let index = 0; index < input.length; index++) {
-			hash = Math.imul(hash ^ input.charCodeAt(index), 0x01000193);
-		}
-		out += (hash >>> 0).toString(16).padStart(8, "0");
-	}
-	return out.slice(0, 26);
-}
 
 function findHeaderKey(headers: ProviderHeaders, name: string): string | undefined {
 	const expected = name.toLowerCase();
