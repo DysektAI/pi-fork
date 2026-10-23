@@ -7,11 +7,13 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const aiEntryUrl = new URL("../src/index.ts", import.meta.url).href;
 const compatEntryUrl = new URL("../src/compat.ts", import.meta.url).href;
 const providersAllUrl = new URL("../src/providers/all.ts", import.meta.url).href;
+const opencodeHeadersUrl = new URL("../src/providers/opencode-headers.ts", import.meta.url).href;
 
 const SDK_SPECIFIERS = ["@anthropic-ai/sdk", "openai", "@google/genai", "@aws-sdk/client-bedrock-runtime"] as const;
 
 type ProbeResult = {
 	loadedSpecifiers: string[];
+	loadedProviderModules: string[];
 };
 
 function runProbe(action: string): ProbeResult {
@@ -20,19 +22,24 @@ function runProbe(action: string): ProbeResult {
 
 		const targets = new Set(${JSON.stringify(SDK_SPECIFIERS)});
 		const loaded = [];
+		const loadedProviderModules = [];
 
 		registerHooks({
 			resolve(specifier, context, nextResolve) {
 				if (targets.has(specifier)) {
 					loaded.push(specifier);
 				}
-				return nextResolve(specifier, context);
+				const resolution = nextResolve(specifier, context);
+				if (resolution.url === ${JSON.stringify(opencodeHeadersUrl)}) {
+					loadedProviderModules.push(resolution.url);
+				}
+				return resolution;
 			},
 		});
 
 		const mod = await import(${JSON.stringify(aiEntryUrl)});
 		${action}
-		console.log(JSON.stringify({ loadedSpecifiers: [...new Set(loaded)] }));
+		console.log(JSON.stringify({ loadedSpecifiers: [...new Set(loaded)], loadedProviderModules: [...new Set(loadedProviderModules)] }));
 	`;
 
 	const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
@@ -57,6 +64,16 @@ function runProbe(action: string): ProbeResult {
 }
 
 describe("lazy provider module loading", () => {
+	// DysektAI/pi-fork#40: keep the formatter export without eagerly loading provider headers.
+	it("exports the OpenCode session formatter without loading its provider module", () => {
+		const result = runProbe(`
+			if (!/^ses_[0-9a-f]{12}[a-z0-9]{14}$/.test(mod.formatOpenCodeSessionId("session-1"))) {
+				throw new Error("OpenCode session ID was not shaped");
+			}
+		`);
+		expect(result.loadedProviderModules).toEqual([]);
+	});
+
 	it("does not load provider SDKs when importing the root barrel", () => {
 		const result = runProbe("");
 		expect(result.loadedSpecifiers).toEqual([]);
