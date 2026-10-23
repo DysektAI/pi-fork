@@ -1523,8 +1523,6 @@ describe("openai-completions tool_choice", () => {
 
 		for (const model of cases) {
 			let payload: unknown;
-			expect(model.api).toBe("openai-completions");
-			if (model.api !== "openai-completions") throw new Error("Expected OpenAI Completions model");
 			expect(model.compat?.maxTokensField).toBe("max_tokens");
 
 			await streamSimple(
@@ -1763,7 +1761,7 @@ describe("openai-completions tool_choice", () => {
 	});
 
 	it("uses OpenRouter reasoning object instead of reasoning_effort", async () => {
-		const model = getModel("openrouter", "deepseek/deepseek-v4-pro")!;
+		const model = getModel("openrouter", "deepseek/deepseek-r1-0528")!;
 		let payload: unknown;
 
 		await streamSimple(

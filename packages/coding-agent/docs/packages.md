@@ -18,6 +18,8 @@ pi install ./local-package
 
 For a verified DysektAI fork source checkout, `pi update --self` follows the `DysektAI/pi-fork` release channel: it fetches `origin/local`, switches to `local`, fast-forwards (and stops safely if the branch has diverged), installs from the lockfile, and rebuilds. It does not merge `upstream/main`; maintainers use `fork-sync.sh` for upstream integration. Global npm, pnpm, yarn, and Bun installs continue to use the upstream package channel. See the repository's `FORK.md`.
 
+If a configured package fails to install at startup, for example because npm cannot reach the registry, Pi warns about it, skips that package's resources, and keeps running. Pi tries to install it again on the next start or `/reload`. `pi install` and `pi update --extensions` still report the failure and exit non-zero.
+
 Personal installs are written to `~/.pi/agent/settings.json`. Add `--local` or `-l` to write the package declaration to `.pi/settings.json`. Pi reads declarations from that file only after project trust is granted.
 
 Project packages are installed and loaded only after project trust is resolved. Packages can execute extension code and can include skills that instruct the model to run programs. Review third-party package source before installing it. Review project package declarations before granting project trust.
